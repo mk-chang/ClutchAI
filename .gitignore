@@ -156,3 +156,4 @@ logs/
 qdrant_data/
 pinecone_data/
 weaviate_data/
+*chroma_db/

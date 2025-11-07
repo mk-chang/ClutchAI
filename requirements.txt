@@ -1,6 +1,10 @@
-# Core Framework
-fastapi
-uvicorn
+# Data Processing
+pandas
+numpy
+python-dateutil
+
+# Utilities
+python-dotenv
 
 # Yahoo Fantasy API
 yfpy
@@ -20,10 +24,9 @@ youtube_transcript_api
 # Vector Database - ChromaDB (Local)
 chromadb
 
-# Data Processing
-pandas
-numpy
-python-dateutil
+#Streamlit Web App
+streamlit
 
-# Utilities
-python-dotenv
+# # Core Framework
+# fastapi
+# uvicorn

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clutchai"
+version = "0.1.0"
+description = "AI-powered fantasy sports assistant built with Retrieval-Augmented Generation (RAG)"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pandas",
+    "numpy",
+    "python-dateutil",
+    "python-dotenv",
+    "yfpy",
+    "openai",
+    "tiktoken",
+    "langchain",
+    "langchain-openai",
+    "langchainhub",
+    "langchain_community",
+    "langchain-text-splitters",
+    "youtube_transcript_api",
+    "chromadb",
+    "streamlit",
+]
+
+[project.optional-dependencies]
+dev = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent*", "app*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt"]
+
