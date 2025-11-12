@@ -3,10 +3,7 @@ ClutchAI Agent - A ReACT AI Agent for Yahoo Fantasy Basketball League Management
 
 This agent combines:
 1. Yahoo Fantasy Sports API integration for live league data
-2. Local ChromaDB vectorstore with Locked On Basketball Podcast transcripts for draft advice
-
-The vectorstore must be initialized separately using scripts/populate_vectorstore.py
-before using this agent.
+2. Local ChromaDB vectorstore with Locked On Basketball Podcast transcripts for draft advice before using this agent.
 """
 
 import os
@@ -19,6 +16,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from yfpy.query import YahooFantasySportsQuery
 
+from ClutchAI.rag.vectorstore import VectorstoreManager
 
 class ClutchAIAgent:
     """
@@ -45,7 +43,7 @@ class ClutchAIAgent:
             yahoo_client_secret: Yahoo OAuth Client Secret (or from env)
             openai_api_key: OpenAI API key (or from env)
             env_file_location: Path to .env file location
-            chroma_persist_directory: Directory to persist ChromaDB (defaults to data/chroma_db in project root)
+            chroma_persist_directory: Directory to persist ChromaDB (defaults to ClutchAI/rag/chroma_db)
             model_name: OpenAI model to use
             temperature: Temperature for LLM
         """
@@ -81,13 +79,13 @@ class ClutchAIAgent:
             save_token_data_to_env_file=True,
         )
         
-        # Set default ChromaDB persist directory if not provided
+        # Set default ChromaDB persist directory if not provided (store in rag directory)
         if chroma_persist_directory is None:
-            self.chroma_persist_directory = str(self.env_file_location / "data" / "chroma_db")
+            self.chroma_persist_directory = str(Path(__file__).parent / "rag" / "chroma_db")
         else:
             self.chroma_persist_directory = chroma_persist_directory
         
-        # Initialize vectorstore from local persistence
+        # Initialize and update vectorstore from local persistence
         self.vectorstore = self._initialize_vectorstore()
         self.retriever = self.vectorstore.as_retriever()
         
@@ -110,40 +108,80 @@ class ClutchAIAgent:
     
     def _initialize_vectorstore(self) -> Chroma:
         """
-        Load ChromaDB vectorstore from local persistence.
+        Initialize and update ChromaDB vectorstore from local persistence.
+        
+        This method will:
+        1. Check if vectorstore exists
+        2. If not, create it by updating from YAML configuration
+        3. If it exists, update it with any new resources from YAML
+        4. Return the vectorstore instance
         
         Returns:
             Chroma vectorstore instance
             
         Raises:
-            FileNotFoundError: If the vectorstore directory doesn't exist
-            ValueError: If the vectorstore exists but is empty
+            RuntimeError: If vectorstore creation/update fails
         """
-        # Check if persist directory exists
-        if not os.path.exists(self.chroma_persist_directory):
-            raise FileNotFoundError(
-                f"ChromaDB vectorstore not found at {self.chroma_persist_directory}. "
-                "Please initialize the vectorstore first using the populate_vectorstore script."
-            )
+        # Get path to vectordata.yaml (should be in rag directory)
+        vectordata_yaml = Path(__file__).parent / "rag" / "vectordata.yaml"
         
+        # Initialize VectorstoreManager to handle creation/updates
+        vectorstore_manager = VectorstoreManager(
+            vectordata_yaml=str(vectordata_yaml),
+            chroma_persist_directory=self.chroma_persist_directory,
+            openai_api_key=self.openai_api_key,
+            env_file_location=self.env_file_location,
+        )
+        
+        # Check if vectorstore exists
+        existing_vectorstore = vectorstore_manager.get_vectorstore()
+        vectorstore_exists = existing_vectorstore is not None
+        
+        # Update vectorstore (will create if it doesn't exist)
         try:
-            vectorstore = Chroma(
-                persist_directory=self.chroma_persist_directory,
-                embedding_function=OpenAIEmbeddings(api_key=self.openai_api_key),
+            print("Updating vectorstore from YAML configuration...")
+            update_results = vectorstore_manager.update_vectorstore(
+                chunk_size_seconds=30,
+                skip_existing=True
             )
             
-            # Check if collection has documents
-            if vectorstore._collection.count() == 0:
-                raise ValueError(
-                    f"ChromaDB vectorstore at {self.chroma_persist_directory} exists but is empty. "
-                    "Please populate it using the populate_vectorstore script."
-                )
-            
-            return vectorstore
+            # Print update summary
+            if update_results['added'] > 0 or update_results['updated'] > 0:
+                print(f"Vectorstore updated: {update_results['added']} added, "
+                      f"{update_results['updated']} updated, "
+                      f"{update_results['chunks_added']} chunks total")
+            elif vectorstore_exists:
+                print("Vectorstore is up to date.")
+            else:
+                print("Vectorstore created successfully.")
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to load ChromaDB vectorstore from {self.chroma_persist_directory}: {e}"
-            ) from e
+            print(f"Warning: Error updating vectorstore: {e}")
+            # Continue anyway - might be able to load existing vectorstore
+        
+        # Get the vectorstore instance
+        vectorstore = vectorstore_manager.get_vectorstore()
+        
+        if vectorstore is None:
+            # Try to create an empty vectorstore as fallback
+            try:
+                vectorstore = Chroma(
+                    persist_directory=self.chroma_persist_directory,
+                    embedding_function=OpenAIEmbeddings(api_key=self.openai_api_key),
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to initialize ChromaDB vectorstore at {self.chroma_persist_directory}: {e}"
+                ) from e
+        
+        # Verify vectorstore has documents
+        try:
+            doc_count = vectorstore._collection.count()
+            if doc_count == 0:
+                print("Warning: Vectorstore exists but is empty. It will be populated on next update.")
+        except Exception as e:
+            print(f"Warning: Could not verify vectorstore document count: {e}")
+        
+        return vectorstore
     
     def _create_tools(self):
         """

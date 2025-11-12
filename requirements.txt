@@ -5,6 +5,7 @@ python-dateutil
 
 # Utilities
 python-dotenv
+pyyaml
 
 # Yahoo Fantasy API
 yfpy
@@ -20,6 +21,10 @@ langchain-text-splitters
 
 #Youtube Transcript
 youtube_transcript_api
+
+#Web Scraping
+scrapy
+requests
 
 # Vector Database - ChromaDB (Local)
 chromadb

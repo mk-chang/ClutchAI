@@ -14,7 +14,7 @@
    - **App Name**: ClutchAI (or your preferred name)
    - **App Description**: AI-powered fantasy sports assistant
    - **App Type**: Web Application
-   - **Redirect URI**: `https://localhost:8000/auth/yahoo/callback` (Yahoo requires HTTPS)
+   - **Redirect URI**: `https://localhost:8080` (Yahoo requires HTTPS, but this can be adjusted based on your setup)
 
 ## Step 3: Get Your Credentials
 
@@ -24,31 +24,38 @@ After creating the app, you'll receive:
 
 ## Step 4: Configure Your Environment
 
-1. Copy the `yahoo.env.template` file to `.env`:
+1. Copy the `env.example` file to `.env`:
    ```bash
-   cp yahoo.env.template .env
+   cp env.example .env
    ```
 
 2. Edit the `.env` file and replace the placeholder values:
    ```
    YAHOO_CLIENT_ID=your_actual_client_id_here
    YAHOO_CLIENT_SECRET=your_actual_client_secret_here
-   YAHOO_REDIRECT_URI=https://localhost:8000/auth/yahoo/callback
+   YAHOO_REDIRECT_URI=https://localhost:8080
+   YAHOO_LEAGUE_ID=your_league_id (optional, defaults to 58930)
+   OPENAI_API_KEY=your_openai_api_key
    ```
 
 ## Step 5: Test Your Setup
 
-Run the Yahoo API test script:
+Test your Yahoo API credentials by running the Streamlit app:
+
 ```bash
-python scripts/test_yahoo_api.py
+streamlit run app/streamlit_app.py
 ```
+
+Then enter your credentials in the sidebar and test with a query like "Show my team roster".
 
 ## Important Notes
 
-- **Redirect URI**: Must exactly match what you configured in Yahoo Developer Console
+- **Redirect URI**: Must exactly match what you configured in Yahoo Developer Console (if using OAuth flow)
 - **Rate Limits**: Yahoo API has rate limits (usually 100 requests per hour)
 - **Permissions**: Your app will need to request specific fantasy sports permissions
 - **Testing**: Start with a test league before using production data
+- **League ID**: You can find your league ID in the Yahoo Fantasy Sports URL when viewing your league
+- **Client ID/Secret**: These are used for OAuth authentication with Yahoo's API
 
 ## Troubleshooting
 
@@ -60,7 +67,8 @@ python scripts/test_yahoo_api.py
 ## Next Steps
 
 Once your Yahoo API credentials are set up:
-1. Test the connection with `python scripts/test_yahoo_api.py`
-2. Set up your database (Google Cloud SQL)
-3. Configure ChromaDB for vector storage
-4. Start the FastAPI application
+1. Test the connection by running the Streamlit app: `streamlit run app/streamlit_app.py`
+2. Enter your credentials in the sidebar
+3. Configure ChromaDB for vector storage (see `docs/CHROMADB_SETUP.md`)
+4. Add resources to your vectorstore (see `docs/VECTORSTORE_MANAGEMENT.md`)
+5. Start asking questions about your fantasy league!

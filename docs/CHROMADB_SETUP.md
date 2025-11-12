@@ -11,7 +11,7 @@ pip install -r requirements.txt
 
 **Or install ChromaDB only (minimal setup):**
 ```bash
-pip install chromadb fastapi uvicorn pydantic pydantic-settings
+pip install chromadb langchain langchain-openai langchain-community
 ```
 
 ### 2. Configure Environment
@@ -19,37 +19,23 @@ pip install chromadb fastapi uvicorn pydantic pydantic-settings
 Create a `.env` file with these settings:
 
 ```bash
-# Copy the configuration
-cp chromadb.env .env
+# Copy the configuration template
+cp env.example .env
 
 # Edit .env file and update these values:
 # - YAHOO_CLIENT_ID=your_yahoo_client_id
 # - YAHOO_CLIENT_SECRET=your_yahoo_client_secret  
 # - OPENAI_API_KEY=your_openai_api_key
-# - DATABASE_URL=postgresql://username:password@localhost:5432/clutchai
-# - DATABASE_URL_ASYNC=postgresql+asyncpg://username:password@localhost:5432/clutchai
-```
-
-### 3. Set Vector Database Provider
-
-Make sure your `.env` file contains:
-```bash
-VECTOR_DB_PROVIDER=chromadb
-```
-
-### 4. Test ChromaDB Setup
-
-```bash
-python scripts/setup_chromadb.py
+# - YAHOO_LEAGUE_ID=your_league_id (optional, defaults to 58930)
 ```
 
 ## ChromaDB Storage Location
 
 ChromaDB will automatically create a local storage directory:
 
-- **Location**: `./chroma_db/` (in your project root)
+- **Location**: `ClutchAI/rag/chroma_db/` (in the rag directory)
 - **Persistence**: Automatic - data persists between runs
-- **Backup**: Simply copy the `./chroma_db/` directory
+- **Backup**: Simply copy the `ClutchAI/rag/chroma_db/` directory
 - **Portability**: Easy to move between environments
 
 ## Benefits of ChromaDB
@@ -67,17 +53,17 @@ ChromaDB will automatically create a local storage directory:
 
 1. **Import Errors**: Make sure all dependencies are installed
    ```bash
-   pip install chromadb fastapi pydantic
+   pip install chromadb langchain langchain-openai langchain-community
    ```
 
-2. **Environment Variables**: Check your `.env` file
+2. **Environment Variables**: Check your `.env` file has `OPENAI_API_KEY` set
    ```bash
-   VECTOR_DB_PROVIDER=chromadb
+   OPENAI_API_KEY=your_openai_api_key
    ```
 
 3. **Storage Permissions**: Ensure write access to project directory
    ```bash
-   chmod 755 ./chroma_db/
+   chmod 755 ClutchAI/rag/chroma_db/
    ```
 
 ### Quick Test
@@ -100,35 +86,39 @@ print("ChromaDB working:", len(results['documents'][0]) > 0)
 
 ## Next Steps
 
-1. **Start the application**:
+1. **Start the Streamlit application**:
    ```bash
-   uvicorn app.main:app --reload
+   streamlit run app/streamlit_app.py
    ```
 
-2. **Test the API**:
-   - Open http://localhost:8000/docs
-   - Try the vector endpoints
-   - Test RAG queries
+2. **Test the application**:
+   - Open http://localhost:8501
+   - Enter your API keys in the sidebar
+   - Ask questions about your fantasy league
+   - The vectorstore will be automatically initialized and used for RAG queries
 
 3. **Monitor storage**:
-   - Check `./chroma_db/` directory
-   - Files will be created automatically
+   - Check `ClutchAI/rag/chroma_db/` directory
+   - Files will be created automatically when you add resources
 
 ## Production Considerations
 
 For production use with ChromaDB:
 
-- **Backup Strategy**: Regular backups of `./chroma_db/` directory
+- **Backup Strategy**: Regular backups of `ClutchAI/rag/chroma_db/` directory
 - **Storage Space**: Monitor disk usage
 - **Performance**: Consider upgrading to cloud solutions for scale
 - **Security**: Ensure proper file permissions
 
-## Alternative Vector Databases
+## Adding Resources to Vectorstore
 
-If you need cloud storage later:
+To add YouTube videos or articles to your vectorstore, edit `ClutchAI/rag/vectordata.yaml` and then use the `VectorstoreManager`:
 
-- **Pinecone**: Cloud-hosted, managed service
-- **Qdrant**: Self-hosted, high performance
-- **Weaviate**: Graph database with vector search
+```python
+from ClutchAI.rag.vectorstore import VectorstoreManager
 
-Just change `VECTOR_DB_PROVIDER` in your `.env` file!
+manager = VectorstoreManager()
+results = manager.update_vectorstore()
+```
+
+See `docs/VECTORSTORE_MANAGEMENT.md` for detailed instructions.

@@ -1,0 +1,56 @@
+# RAG Configuration File
+# This file contains settings for Retrieval-Augmented Generation (RAG) operations
+
+# YouTube video processing settings
+youtube:
+  # Size of transcript chunks in seconds
+  # Smaller values create more granular chunks but more documents
+  # Larger values create fewer documents but may lose fine-grained context
+  chunk_size_seconds: 30
+
+# Article processing settings
+article:
+  # Size of text chunks in characters
+  # Recommended: 500-2000 characters depending on content type
+  chunk_size: 1000
+  
+  # Overlap between chunks in characters
+  # Helps maintain context across chunk boundaries
+  # Recommended: 10-20% of chunk_size
+  chunk_overlap: 200
+
+# Vectorstore settings
+vectorstore:
+  # Number of documents to retrieve for each query
+  # Higher values provide more context but may include less relevant results
+  k: 4
+  
+  # Similarity search threshold (if supported by vectorstore)
+  # Documents below this threshold will be filtered out
+  # score_threshold: null
+
+# Embedding settings
+embeddings:
+  # OpenAI embedding model to use
+  # Options: text-embedding-ada-002, text-embedding-3-small, text-embedding-3-large
+  model: "text-embedding-ada-002"
+  
+  # Batch size for embedding operations
+  # Larger batches are faster but use more memory
+  batch_size: 100
+
+# Retrieval settings
+retrieval:
+  # Search type: "similarity" or "mmr" (Maximum Marginal Relevance)
+  # similarity: Pure similarity-based retrieval
+  # mmr: Balances relevance and diversity
+  search_type: "similarity"
+  
+  # MMR settings (only used if search_type is "mmr")
+  mmr:
+    # Lambda parameter for MMR (0.0 to 1.0)
+    # 0.0 = pure diversity, 1.0 = pure relevance
+    lambda_param: 0.5
+    # Fetch this many documents before applying MMR
+    fetch_k: 20
+

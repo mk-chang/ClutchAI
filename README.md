@@ -11,12 +11,11 @@ ClutchAI connects to the **Yahoo Fantasy Sports API** to give you real-time, con
 - **Explainable Insights:** Every answer includes source context from your league.  
 
 ## 🧩 Tech Stack
-- **Backend:** Python / FastAPI  
+- **Frontend:** Streamlit  
 - **Data Source:** Yahoo Fantasy Sports API  
-- **LLM Layer:** OpenAI or local LLM (configurable)  
-- **Vector Store:** Pinecone / Qdrant / Weaviate  
-- **Auth:** Yahoo 3-legged OAuth2  
-- **Database:** Google Cloud PostgresSQL 
+- **LLM Layer:** OpenAI (GPT-4)  
+- **Vector Store:** ChromaDB (local)  
+- **RAG System:** LangChain with OpenAI embeddings 
 
 ## ⚙️ Setup
 
@@ -25,24 +24,38 @@ ClutchAI connects to the **Yahoo Fantasy Sports API** to give you real-time, con
    git clone https://github.com/yourusername/clutchai.git
    cd clutchai
    ```
-2. Install dependencies
+
+2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
-3. Set environment variables
-   ```makefile
-    YAHOO_CLIENT_ID=
-    YAHOO_CLIENT_SECRET=
-    OPENAI_API_KEY=
-    VECTOR_DB_URL=
-   ```
-4. Run the app
+
+3. **Configure environment variables**
    ```bash
-   uvicorn app.main:app --reload
+   cp env.example .env
+   ```
+   
+   Edit `.env` and add your credentials:
+   ```bash
+   YAHOO_CLIENT_ID=your_yahoo_client_id
+   YAHOO_CLIENT_SECRET=your_yahoo_client_secret
+   OPENAI_API_KEY=your_openai_api_key
+   YAHOO_LEAGUE_ID=your_league_id  # Optional, defaults to 58930
    ```
 
-## Authorize your Yahoo account
-Visit /auth/yahoo to connect your fantasy league.
+4. **Run the Streamlit app**
+   ```bash
+   streamlit run app/streamlit_app.py
+   ```
+   
+   The app will open in your browser at `http://localhost:8501`
+
+## 📚 Documentation
+
+For detailed setup instructions, see:
+- **[Yahoo API Setup](docs/YAHOO_API_SETUP_GUIDE.md)** - How to get Yahoo Fantasy API credentials
+- **[ChromaDB Setup](docs/CHROMADB_SETUP.md)** - Vector database configuration
+- **[Vectorstore Management](docs/VECTORSTORE_MANAGEMENT.md)** - Adding YouTube videos and articles to your knowledge base
 
 ## 💬 Example Queries
 - "Show my team’s performance from last week."
@@ -51,13 +64,27 @@ Visit /auth/yahoo to connect your fantasy league.
 - "Should I start Joe Mixon or Austin Ekeler?"
 
 ## 🧠 How It Works
-Data Retrieval: Pulls league + team data via Yahoo API.
-Embedding: Converts textual summaries into vector embeddings.
-Storage: Saves structured data in Postgres and embeddings in a vector DB.
-RAG Pipeline: On query, retrieves relevant context and augments the LLM prompt.
-Response Generation: LLM generates grounded, explainable insights.
+
+1. **Data Retrieval**: Pulls league + team data via Yahoo Fantasy Sports API
+2. **Knowledge Base**: Stores YouTube videos and articles in ChromaDB vectorstore for context
+3. **Embedding**: Converts textual content into vector embeddings using OpenAI
+4. **RAG Pipeline**: On query, retrieves relevant context from vectorstore and augments the LLM prompt
+5. **Response Generation**: LLM generates grounded, explainable insights using both league data and knowledge base
 
 ## 🔒 Security
-OAuth tokens are encrypted and stored securely.
-Private league data is never shared outside your account
+
+- API keys are stored locally in `.env` file (never committed to git)
+- Yahoo OAuth tokens are managed securely by the yfpy library
+- Private league data is never shared outside your account
+- Vectorstore data is stored locally in `ClutchAI/rag/chroma_db/`
+
+## 🎯 Getting Started
+
+1. Set up your Yahoo API credentials (see [Yahoo API Setup Guide](docs/YAHOO_API_SETUP_GUIDE.md))
+2. Configure your OpenAI API key
+3. Run the Streamlit app: `streamlit run app/streamlit_app.py`
+4. Enter your credentials in the app sidebar
+5. Start asking questions about your fantasy league!
+
+The app will automatically initialize the vectorstore and load resources from `ClutchAI/rag/vectordata.yaml` on first run.
  

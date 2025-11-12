@@ -3,14 +3,33 @@
 # For Deployment: https://docs.streamlit.io/develop/tutorials/chat-and-llm-apps/llm-quickstart
 
 import os
+import sys
 from dotenv import load_dotenv
 from pathlib import Path
 
+# Add project root to Python path so we can import ClutchAI
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent.resolve()
+
+# Verify project root by checking for ClutchAI directory
+if not (project_root / "ClutchAI").exists():
+    # Try current working directory as fallback
+    cwd_root = Path.cwd().resolve()
+    if (cwd_root / "ClutchAI").exists():
+        project_root = cwd_root
+    else:
+        raise FileNotFoundError(
+            f"ClutchAI directory not found. Expected at: {project_root / 'ClutchAI'}"
+        )
+
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import streamlit as st
-from agent.ClutchAI import ClutchAIAgent
+from ClutchAI.agent import ClutchAIAgent
 
 # Load environment variables from .env file
-env_file_location = Path(__file__).parent.parent.resolve()
+env_file_location = project_root
 env_file_path = env_file_location / ".env"
 
 # Load .env file if it exists
@@ -72,29 +91,20 @@ if "messages" not in st.session_state:
 # Initialize agent in session state if not already initialized
 if "agent" not in st.session_state:
     st.session_state["agent"] = None
+if "agent_key" not in st.session_state:
+    st.session_state["agent_key"] = None
 
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
-
-if prompt := st.chat_input():
-    if not openai_api_key:
-        st.info("Please add your OpenAI API key to continue.")
-        st.stop()
-    
-    if not yahoo_league_id:
-        st.info("Please add your Yahoo League ID to continue.")
-        st.stop()
-
-    # Initialize or reinitialize agent if credentials changed
+# Initialize or reinitialize agent on page load if credentials are available
+if openai_api_key and yahoo_league_id:
     try:
         league_id_int = int(yahoo_league_id)
     except ValueError:
         st.error("Yahoo League ID must be a number.")
         st.stop()
     
-    # Check if agent needs to be reinitialized
+    # Check if agent needs to be initialized or reinitialized
     agent_key = f"{openai_api_key[:10]}_{yahoo_client_id[:10] if yahoo_client_id else 'none'}_{league_id_int}"
-    if st.session_state.get("agent_key") != agent_key:
+    if st.session_state.get("agent_key") != agent_key or st.session_state["agent"] is None:
         with st.spinner("Initializing ClutchAI Agent..."):
             try:
                 st.session_state["agent"] = ClutchAIAgent(
@@ -107,7 +117,24 @@ if prompt := st.chat_input():
                 st.session_state["agent_key"] = agent_key
             except Exception as e:
                 st.error(f"Failed to initialize agent: {e}")
-                st.stop()
+                st.session_state["agent"] = None
+                st.session_state["agent_key"] = None
+
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
+
+if prompt := st.chat_input():
+    if not openai_api_key:
+        st.info("Please add your OpenAI API key to continue.")
+        st.stop()
+    
+    if not yahoo_league_id:
+        st.info("Please add your Yahoo League ID to continue.")
+        st.stop()
+    
+    if st.session_state["agent"] is None:
+        st.error("Agent not initialized. Please check your credentials.")
+        st.stop()
     
     # Add user message to chat
     st.session_state.messages.append({"role": "user", "content": prompt})
