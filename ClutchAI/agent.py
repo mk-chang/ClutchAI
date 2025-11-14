@@ -17,6 +17,8 @@ from langchain_community.vectorstores import Chroma
 from yfpy.query import YahooFantasySportsQuery
 
 from ClutchAI.rag.vectorstore import VectorstoreManager
+from ClutchAI.tools.yahoofantasy import YahooFantasyTool
+from ClutchAI.tools.nba_api import nbaAPITool
 
 class ClutchAIAgent:
     """
@@ -33,6 +35,7 @@ class ClutchAIAgent:
         chroma_persist_directory: Optional[str] = None,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
+        debug: bool = False,
     ):
         """
         Initialize the ClutchAI Agent.
@@ -46,7 +49,10 @@ class ClutchAIAgent:
             chroma_persist_directory: Directory to persist ChromaDB (defaults to ClutchAI/rag/chroma_db)
             model_name: OpenAI model to use
             temperature: Temperature for LLM
+            debug: Enable debug mode for verbose logging
         """
+        # Store debug mode
+        self.debug = debug
         # Set environment file location
         if env_file_location is None:
             # Default to project root (parent of agent/)
@@ -187,28 +193,85 @@ class ClutchAIAgent:
         """
         Create LangChain tools for the agent.
         
-        Returns:
-            List of tool instances
-        """
-        @tool("YahooLeagueMetDataTool", description="Get Yahoo League Metadata in json format from YPFS.")
-        def league_metadata_tool() -> str:
-            """Get Yahoo League Metadata."""
-            try:
-                data = self.query.get_league_metadata()
-                return f'The Yahoo Fantasy league metadata in json format is: {data}'
-            except Exception as e:
-                return f"Failed to fetch Yahoo Fantasy league metadata: {e}"
+        Includes all Yahoo Fantasy Sports API tools:
+        - Game tools (10): game keys, game info, metadata, weeks, stat categories, positions
+        - User tools (4): current user, user games, leagues, teams
+        - League tools (12): league key, info, metadata, settings, standings, teams, players, 
+          draft results, transactions, scoreboard, matchups
+        - Team tools (13): team info, metadata, stats, standings, roster, player info, 
+          draft results, matchups
+        - Player tools (6): player stats (season/week/date), ownership, percent owned, draft analysis
         
-        @tool("locked_on_retreiver", description="Retrieve contextual knowledge from Locked On Basketball.")
-        def retrieve_LockedOnKnowledge(query: str) -> str:
-            """Retrieve contextual knowledge from Locked On Podcast YouTube transcripts or articles."""
+        Includes NBA API tools:
+        - Static Data tools (4): get all players/teams, find players/teams by name
+        - Player Stats tools (5): player info, career stats, game log, dashboard splits
+        - Team Stats tools (2): team info, game log
+        - Game tools (5): scoreboard, live scoreboard, box score, play-by-play, find games
+        
+        - Vectorstore tool (1): retrieve contextual knowledge from vectorstore
+        
+        Returns:
+            List of tool instances (45+ Yahoo Fantasy tools + 16 NBA API tools + 1 vectorstore tool)
+        """
+        # Create Yahoo Fantasy tools using YahooFantasyTool class
+        # This includes all 45 Yahoo Fantasy Sports API tools
+        yahoo_tool = YahooFantasyTool(self.query)
+        yahoo_tools = yahoo_tool.get_all_tools()
+        
+        # Create NBA API tools using nbaAPITool class
+        # This includes all 16 NBA API tools
+        nba_tool = nbaAPITool()
+        nba_tools = nba_tool.get_all_tools()
+        
+        @tool("vectorstore_retriever", description="Retrieve contextual knowledge from the vectorstore.")
+        def retrieve_vectorstore(query: str) -> str:
+            """Retrieve contextual knowledge from the vectorstore."""
             try:
                 results = self.retriever.invoke(query)
                 return "\n\n".join([r.page_content for r in results])
             except Exception as e:
                 return f"Failed to retrieve knowledge: {e}"
         
-        return [league_metadata_tool, retrieve_LockedOnKnowledge]
+        tools = yahoo_tools + nba_tools + [retrieve_vectorstore]
+        return self._wrap_tools_with_debug_logging(tools)
+
+    def _wrap_tools_with_debug_logging(self, tools):
+        """Add terminal debug logging to each tool when debug mode is enabled."""
+        if not self.debug:
+            return tools
+
+        wrapped_tools = []
+        for tool in tools:
+            tool_name = getattr(tool, "name", tool.__class__.__name__)
+            updates = {}
+
+            tool_func = getattr(tool, "func", None)
+            if callable(tool_func):
+                def func_wrapper(*args, _orig=tool_func, _name=tool_name, **kwargs):
+                    print(f"🐛 [DEBUG] Tool '{_name}' called with args={args}, kwargs={kwargs}")
+                    return _orig(*args, **kwargs)
+
+                updates["func"] = func_wrapper
+
+            tool_coroutine = getattr(tool, "coroutine", None)
+            if callable(tool_coroutine):
+                async def coroutine_wrapper(*args, _orig=tool_coroutine, _name=tool_name, **kwargs):
+                    print(f"🐛 [DEBUG] Tool '{_name}' coroutine called with args={args}, kwargs={kwargs}")
+                    return await _orig(*args, **kwargs)
+
+                updates["coroutine"] = coroutine_wrapper
+
+            if updates and hasattr(tool, "copy"):
+                try:
+                    tool = tool.copy(update=updates)
+                except Exception as exc:  # pragma: no cover - debug logging only
+                    print(f"🐛 [DEBUG] Failed to wrap tool '{tool_name}': {exc}")
+            elif updates and self.debug:
+                print(f"🐛 [DEBUG] Tool '{tool_name}' does not support copy(); skipping debug wrap")
+
+            wrapped_tools.append(tool)
+
+        return wrapped_tools
     
     def invoke(self, messages: list) -> dict:
         """

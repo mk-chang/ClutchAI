@@ -20,7 +20,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from ClutchAI.rag.data_classes import YouTubeVideo, extract_youtube_video_id
+from ClutchAI.rag.data_class import YouTubeVideo, extract_youtube_video_id
 
 
 class BaseVectorManager(ABC):

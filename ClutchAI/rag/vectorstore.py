@@ -35,7 +35,7 @@ from ClutchAI.rag.data_pipelines import (
     YoutubeVectorManager,
     ArticleVectorManager,
 )
-from ClutchAI.rag.data_classes import YouTubeVideo
+from ClutchAI.rag.data_class import YouTubeVideo
 
 
 class VectorstoreManager:

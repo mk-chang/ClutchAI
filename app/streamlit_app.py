@@ -1,11 +1,27 @@
 # Description: A simple Streamlit app that uses ClutchAI Agent for Yahoo Fantasy Basketball.
 # Local Testing Command: streamlit run streamlit_app.py
+# Debug Mode: streamlit run streamlit_app.py -- --debug
+#   OR: CLUTCHAI_DEBUG=1 streamlit run streamlit_app.py
 # For Deployment: https://docs.streamlit.io/develop/tutorials/chat-and-llm-apps/llm-quickstart
 
 import os
 import sys
 from dotenv import load_dotenv
 from pathlib import Path
+
+# Check for debug mode from command line arguments or environment variable
+# Note: Streamlit may consume --debug flag, so also check environment variable as fallback
+# Usage: streamlit run streamlit_app.py --debug
+#   OR:   CLUTCHAI_DEBUG=1 streamlit run streamlit_app.py
+# Debug mode enables verbose terminal logging in ClutchAIAgent and other components
+DEBUG_MODE = (
+    "--debug" in sys.argv 
+    or "-debug" in sys.argv 
+    or os.environ.get("CLUTCHAI_DEBUG", "").lower() in ("1", "true", "yes")
+)
+
+if DEBUG_MODE:
+    print("🐛 [DEBUG] Debug mode enabled - verbose logging to terminal is active")
 
 # Add project root to Python path so we can import ClutchAI
 current_file = Path(__file__).resolve()
@@ -103,20 +119,31 @@ if openai_api_key and yahoo_league_id:
         st.stop()
     
     # Check if agent needs to be initialized or reinitialized
-    agent_key = f"{openai_api_key[:10]}_{yahoo_client_id[:10] if yahoo_client_id else 'none'}_{league_id_int}"
+    # Include debug mode in agent_key to reinitialize when debug mode changes
+    agent_key = f"{openai_api_key[:10]}_{yahoo_client_id[:10] if yahoo_client_id else 'none'}_{league_id_int}_{DEBUG_MODE}"
     if st.session_state.get("agent_key") != agent_key or st.session_state["agent"] is None:
         with st.spinner("Initializing ClutchAI Agent..."):
             try:
+                if DEBUG_MODE:
+                    print("🐛 [DEBUG] Initializing ClutchAI Agent with debug mode enabled")
                 st.session_state["agent"] = ClutchAIAgent(
                     yahoo_league_id=league_id_int,
                     yahoo_client_id=yahoo_client_id or None,
                     yahoo_client_secret=yahoo_secret or None,
                     openai_api_key=openai_api_key,
                     env_file_location=env_file_location,
+                    debug=DEBUG_MODE,
                 )
                 st.session_state["agent_key"] = agent_key
+                if DEBUG_MODE:
+                    print("🐛 [DEBUG] ClutchAI Agent initialized successfully")
             except Exception as e:
-                st.error(f"Failed to initialize agent: {e}")
+                error_msg = f"Failed to initialize agent: {e}"
+                st.error(error_msg)
+                if DEBUG_MODE:
+                    import traceback
+                    print("🐛 [DEBUG] Agent initialization error:")
+                    traceback.print_exc()
                 st.session_state["agent"] = None
                 st.session_state["agent_key"] = None
 
@@ -145,11 +172,19 @@ if prompt := st.chat_input():
         try:
             # Pass conversation history (excluding the current prompt which is already added)
             conversation_history = st.session_state.messages[:-1]  # All messages except the one we just added
+            if DEBUG_MODE:
+                print(f"🐛 [DEBUG] Processing prompt: {prompt[:100]}...")
             response = st.session_state["agent"].chat(prompt, conversation_history=conversation_history)
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.chat_message("assistant").write(response)
+            if DEBUG_MODE:
+                print(f"🐛 [DEBUG] Response generated successfully ({len(response)} characters)")
         except Exception as e:
             error_msg = f"Error: {str(e)}"
             st.error(error_msg)
+            if DEBUG_MODE:
+                import traceback
+                print("🐛 [DEBUG] Chat error:")
+                traceback.print_exc()
             st.session_state.messages.append({"role": "assistant", "content": error_msg})
             st.chat_message("assistant").write(error_msg)

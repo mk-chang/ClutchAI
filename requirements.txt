@@ -10,6 +10,9 @@ pyyaml
 # Yahoo Fantasy API
 yfpy
 
+# NBA API
+nba_api
+
 # LLM and AI
 openai
 tiktoken
