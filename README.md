@@ -78,19 +78,45 @@ ClutchAI uses the **ReACT (Reasoning + Acting)** framework, which enables the ag
 ### Architecture
 
 ```mermaid
-graph TD
-    A[User Query] --> B[ReACT Agent]
-    B --> C{Reasoning}
-    C --> D[Yahoo Fantasy Tools]
-    C --> E[NBA API Tools]
-    C --> F[Vectorstore Retriever]
-    D --> G[Yahoo Fantasy API]
-    E --> H[NBA.com API]
-    F --> I[ChromaDB Vectorstore]
-    G --> J[Response Generation]
-    H --> J
-    I --> J
-    J --> K[Final Answer]
+graph TB
+    subgraph Frontend["Frontend"]
+        A[User Query] --> B[Streamlit WebApp]
+    end
+    
+    subgraph Agent["ReACT Framework"]
+        C{ClutchAI Agent}
+        L[LLM]
+    end
+    
+    subgraph Output["Output"]
+        K[Final Answer]
+    end
+    
+    subgraph RAGPipeline["RAG Pipeline"]
+        RAG[RAG] --> F[Vectorstore Retriever]
+        F --> I[ChromaDB Vectorstore]
+    end
+    
+    subgraph APITools["API Tools"]
+        CT[ClutchAI Tools] --> D[Yahoo Fantasy Tools]
+        CT --> E[NBA API Tools]
+        D --> G[Yahoo Fantasy API]
+        E --> H[NBA.com API]
+    end
+    
+    B --> C
+    C --> RAG
+    C --> CT
+    C -->|action| L
+    L -.->|reasoning| C
+    L --> K
+    K --> B
+    
+    style Frontend stroke:#4A90E2,stroke-width:2px
+    style Agent stroke:#FF9500,stroke-width:2px
+    style RAGPipeline stroke:#2ECC71,stroke-width:2px
+    style APITools stroke:#9B59B6,stroke-width:2px
+    style Output stroke:#E91E63,stroke-width:2px
 ```
 
 ### Available Agent Tools
