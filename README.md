@@ -71,6 +71,44 @@ For detailed setup instructions, see:
 4. **RAG Pipeline**: On query, retrieves relevant context from vectorstore and augments the LLM prompt
 5. **Response Generation**: LLM generates grounded, explainable insights using both league data and knowledge base
 
+## 🤖 ReACT Framework & Tools
+
+ClutchAI uses the **ReACT (Reasoning + Acting)** framework, which enables the agent to reason about user queries and take actions by calling specialized tools. The agent can dynamically decide which tools to use based on the query context.
+
+### Architecture
+
+```mermaid
+graph TD
+    A[User Query] --> B[ReACT Agent]
+    B --> C{Reasoning}
+    C --> D[Yahoo Fantasy Tools]
+    C --> E[NBA API Tools]
+    C --> F[Vectorstore Retriever]
+    D --> G[Yahoo Fantasy API]
+    E --> H[NBA.com API]
+    F --> I[ChromaDB Vectorstore]
+    G --> J[Response Generation]
+    H --> J
+    I --> J
+    J --> K[Final Answer]
+```
+
+### Available Agent Tools
+
+| Name | Data Type | Implementation |
+|------|-----------|----------------|
+| Yahoo Fantasy Tools (45) | Live data | API Tool |
+| NBA API - Player/Team Stats | Live data | API Tool |
+| NBA API - Game Data | Live data | API Tool |
+| NBA API - Static Data | Static data | API Tool |
+| YouTube Transcripts | Static data | VectorDB |
+| Articles | Static data | VectorDB |
+
+**Tool Categories:**
+- **Yahoo Fantasy Tools**: League info, standings, rosters, matchups, player stats, transactions
+- **NBA API Tools**: Player stats, team stats, game scores, box scores, play-by-play
+- **Vectorstore Retriever**: Semantic search over YouTube transcripts and articles
+
 ## 🔒 Security
 
 - API keys are stored locally in `.env` file (never committed to git)
