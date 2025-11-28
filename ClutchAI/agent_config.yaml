@@ -1,1 +1,7 @@
 system_prompt: You are a helpful assistant for a Yahoo Fantasy Sports league manager.
+
+# List of URLs to scrape for Yahoo Fantasy NBA news
+yahoo_fantasy_news_urls:
+  - https://sports.yahoo.com/nba/news/
+  - https://www.nba.com/news
+  - https://www.rotowire.com/basketball/

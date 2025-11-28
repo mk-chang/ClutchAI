@@ -24,16 +24,27 @@ langchain-text-splitters
 
 #Youtube Transcript
 youtube_transcript_api
+google-api-python-client
 
 #Web Scraping
 scrapy
 requests
+beautifulsoup4
+openpyxl
+selenium
+unstructured
+firecrawl-py
 
 # Vector Database - ChromaDB (Local)
 chromadb
 
 #Streamlit Web App
 streamlit
+
+# Testing
+pytest
+pytest-cov
+pytest-mock
 
 # # Core Framework
 # fastapi

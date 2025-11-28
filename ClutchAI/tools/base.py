@@ -2,10 +2,37 @@
 Base class for ClutchAI Agent tools.
 """
 
+import os
 import json
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 from langchain_core.tools import BaseTool as LangChainBaseTool
+
+from ClutchAI.logger import get_logger
+
+logger = get_logger(__name__)
+try:
+    from firecrawl import Firecrawl
+    FirecrawlApp = Firecrawl  # Alias for backward compatibility
+    # Try to get version
+    try:
+        import firecrawl
+        FIRECRAWL_VERSION = getattr(firecrawl, '__version__', None)
+    except (ImportError, AttributeError):
+        FIRECRAWL_VERSION = None
+except ImportError:
+    try:
+        from firecrawl import FirecrawlApp
+        # Try to get version
+        try:
+            import firecrawl
+            FIRECRAWL_VERSION = getattr(firecrawl, '__version__', None)
+        except (ImportError, AttributeError):
+            FIRECRAWL_VERSION = None
+    except ImportError:
+        FirecrawlApp = None
+        Firecrawl = None
+        FIRECRAWL_VERSION = None
 
 
 class ClutchAITool(ABC):
@@ -57,6 +84,91 @@ class ClutchAITool(ABC):
     def get_all_tools(self) -> List[LangChainBaseTool]:
         """
         Get all available tools for this tool class.
+        
+        Returns:
+            List of all LangChain tool instances
+        """
+        pass
+
+
+class FirecrawlTool(ClutchAITool):
+    """
+    Base class for Firecrawl-based tools that use the Firecrawl API.
+    
+    This class provides common functionality for tools that interact with Firecrawl:
+    - FirecrawlApp initialization and API key management
+    - Common response formatting for Firecrawl responses
+    - Shared utility methods
+    
+    Subclasses should:
+    1. Call super().__init__(api_key) in their __init__
+    2. Implement get_all_tools to return their specific tool instances
+    3. Use self.app to access the FirecrawlApp instance
+    """
+    
+    def __init__(self, api_key: Optional[str] = None, debug: bool = False):
+        """
+        Initialize FirecrawlTool.
+        
+        Args:
+            api_key: Firecrawl API key (or from env FIRECRAWL_API_KEY)
+            debug: Enable debug logging (default: False)
+        """
+        if Firecrawl is None and FirecrawlApp is None:
+            raise ImportError(
+                "firecrawl-py is not installed. Please install it with: pip install firecrawl-py"
+            )
+        
+        self.api_key = api_key or os.environ.get('FIRECRAWL_API_KEY')
+        if not self.api_key:
+            raise ValueError(
+                "Firecrawl API key is required. Set FIRECRAWL_API_KEY env var or pass api_key parameter."
+            )
+        
+        # Use Firecrawl (v2) if available, otherwise fall back to FirecrawlApp (v1)
+        if Firecrawl is not None:
+            self.app = Firecrawl(api_key=self.api_key)
+            version_info = "v2"
+        else:
+            self.app = FirecrawlApp(api_key=self.api_key)
+            version_info = "v1"
+        
+        # Log version information in debug mode
+        if debug:
+            version_str = f" (version {FIRECRAWL_VERSION})" if FIRECRAWL_VERSION else ""
+            logger.debug(f"Firecrawl initialized: {version_info}{version_str}")
+            if FIRECRAWL_VERSION is None:
+                logger.debug("Note: Could not detect Firecrawl package version")
+    
+    def _format_response(self, data) -> str:
+        """
+        Helper method to format Firecrawl response data as JSON string.
+        
+        This implementation handles Firecrawl-specific response formats.
+        Subclasses can override if they need custom formatting.
+        
+        Args:
+            data: Response data from Firecrawl API call
+            
+        Returns:
+            Formatted JSON string representation of the data
+        """
+        try:
+            # Handle dict/list
+            if isinstance(data, (dict, list)):
+                return json.dumps(data, default=str, indent=2)
+            # Handle objects with __dict__
+            elif hasattr(data, '__dict__'):
+                return json.dumps(data.__dict__, default=str, indent=2)
+            else:
+                return str(data)
+        except Exception as e:
+            return f"Error formatting response: {str(e)}\nRaw data: {str(data)}"
+    
+    @abstractmethod
+    def get_all_tools(self) -> List[LangChainBaseTool]:
+        """
+        Get all available tools for this Firecrawl-based tool class.
         
         Returns:
             List of all LangChain tool instances

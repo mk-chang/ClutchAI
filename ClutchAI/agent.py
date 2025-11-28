@@ -7,6 +7,7 @@ This agent combines:
 """
 
 import os
+import yaml
 from pathlib import Path
 from typing import Optional
 
@@ -16,9 +17,13 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from yfpy.query import YahooFantasySportsQuery
 
-from ClutchAI.rag.vectorstore import VectorstoreManager
-from ClutchAI.tools.yahoofantasy import YahooFantasyTool
+from ClutchAI.logger import get_logger, setup_logging
+from ClutchAI.rag.vector_manager import VectorstoreManager
+from ClutchAI.tools.yahoo_api import YahooFantasyTool
 from ClutchAI.tools.nba_api import nbaAPITool
+from ClutchAI.tools.fantasy_news import FantasyNewsTool
+
+logger = get_logger(__name__)
 
 class ClutchAIAgent:
     """
@@ -51,8 +56,9 @@ class ClutchAIAgent:
             temperature: Temperature for LLM
             debug: Enable debug mode for verbose logging
         """
-        # Store debug mode
+        # Store debug mode and setup logging
         self.debug = debug
+        setup_logging(debug=debug)
         # Set environment file location
         if env_file_location is None:
             # Default to project root (parent of agent/)
@@ -95,6 +101,13 @@ class ClutchAIAgent:
         self.vectorstore = self._initialize_vectorstore()
         self.retriever = self.vectorstore.as_retriever()
         
+        # Load agent configuration
+        self.agent_config = self._load_agent_config()
+        
+        # Note: LangSmith tracing is automatically enabled if LANGCHAIN_TRACING_V2=true 
+        # and LANGSMITH_API_KEY are set in environment variables.
+        # View traces at https://smith.langchain.com/ - you'll see all tool calls, inputs, and responses there.
+        
         # Create tools
         self.tools = self._create_tools()
         
@@ -105,33 +118,35 @@ class ClutchAIAgent:
             api_key=self.openai_api_key,
         )
         
+        # Get system prompt from config or use default
+        system_prompt = self.agent_config.get('system_prompt', 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.')
+        
         # Create agent
         self.agent = create_agent(
             model=self.llm,
             tools=self.tools,
-            system_prompt="You are a helpful assistant for a Yahoo Fantasy Sports league manager.",
+            system_prompt=system_prompt,
         )
     
     def _initialize_vectorstore(self) -> Chroma:
         """
-        Initialize and update ChromaDB vectorstore from local persistence.
+        Initialize ChromaDB vectorstore from local persistence and display available content.
         
         This method will:
         1. Check if vectorstore exists
-        2. If not, create it by updating from YAML configuration
-        3. If it exists, update it with any new resources from YAML
-        4. Return the vectorstore instance
+        2. Display statistics about available content
+        3. Return the vectorstore instance (or create empty one if needed)
         
         Returns:
             Chroma vectorstore instance
             
         Raises:
-            RuntimeError: If vectorstore creation/update fails
+            RuntimeError: If vectorstore initialization fails
         """
-        # Get path to vectordata.yaml (should be in rag directory)
-        vectordata_yaml = Path(__file__).parent / "rag" / "vectordata.yaml"
+        # Get path to vector_data.yaml (should be in rag directory)
+        vectordata_yaml = Path(__file__).parent / "rag" / "vector_data.yaml"
         
-        # Initialize VectorstoreManager to handle creation/updates
+        # Initialize VectorstoreManager to check vectorstore
         vectorstore_manager = VectorstoreManager(
             vectordata_yaml=str(vectordata_yaml),
             chroma_persist_directory=self.chroma_persist_directory,
@@ -139,33 +154,71 @@ class ClutchAIAgent:
             env_file_location=self.env_file_location,
         )
         
-        # Check if vectorstore exists
-        existing_vectorstore = vectorstore_manager.get_vectorstore()
-        vectorstore_exists = existing_vectorstore is not None
+        # Get vectorstore statistics
+        stats = vectorstore_manager.get_vectorstore_stats()
         
-        # Update vectorstore (will create if it doesn't exist)
-        try:
-            print("Updating vectorstore from YAML configuration...")
-            update_results = vectorstore_manager.update_vectorstore(
-                chunk_size_seconds=30,
-                skip_existing=True
-            )
-            
-            # Print update summary
-            if update_results['added'] > 0 or update_results['updated'] > 0:
-                print(f"Vectorstore updated: {update_results['added']} added, "
-                      f"{update_results['updated']} updated, "
-                      f"{update_results['chunks_added']} chunks total")
-            elif vectorstore_exists:
-                print("Vectorstore is up to date.")
-            else:
-                print("Vectorstore created successfully.")
-        except Exception as e:
-            print(f"Warning: Error updating vectorstore: {e}")
-            # Continue anyway - might be able to load existing vectorstore
-        
-        # Get the vectorstore instance
+        # Get the vectorstore instance (needed for both debug output and return)
         vectorstore = vectorstore_manager.get_vectorstore()
+        
+        # Display vectorstore information (logger handles debug level filtering)
+        logger.debug("\n" + "="*60)
+        logger.debug("Vectorstore Status")
+        logger.debug("="*60)
+        
+        if stats.get('exists', False):
+            logger.debug(f"✓ Vectorstore exists at: {self.chroma_persist_directory}")
+            logger.debug(f"  Total documents: {stats.get('document_count', 0):,}")
+            logger.debug(f"  YouTube videos: {stats.get('youtube_urls', 0)}")
+            logger.debug(f"  Articles: {stats.get('article_urls', 0)}")
+            logger.debug(f"  Total resources: {stats.get('urls_in_vectorstore', 0)}")
+            
+            # Get detailed information about resources (only if debug mode to avoid expensive query)
+            if self.debug and vectorstore is not None:
+                try:
+                    results = vectorstore._collection.get()
+                    if results and 'metadatas' in results and results['metadatas']:
+                        # Group by resource_id to get unique resources
+                        resources = {}
+                        for metadata in results['metadatas']:
+                            if metadata:
+                                resource_id = metadata.get('resource_id')
+                                source_type = metadata.get('source_type', 'unknown')
+                                title = metadata.get('title', 'Untitled')
+                                url = metadata.get('url', '')
+                                
+                                if resource_id:
+                                    if resource_id not in resources:
+                                        resources[resource_id] = {
+                                            'source_type': source_type,
+                                            'title': title,
+                                            'url': url,
+                                            'chunks': 0
+                                        }
+                                    resources[resource_id]['chunks'] += 1
+                        
+                        if resources:
+                            logger.debug(f"\n  Resources in vectorstore ({len(resources)} unique):")
+                            youtube_count = 0
+                            article_count = 0
+                            for resource_id, info in sorted(resources.items(), key=lambda x: x[1]['source_type']):
+                                source_type = info['source_type']
+                                if source_type == 'youtube':
+                                    youtube_count += 1
+                                    logger.debug(f"    [{youtube_count}] {info['title']}")
+                                    logger.debug(f"        Type: YouTube | Chunks: {info['chunks']} | ID: {resource_id[:12]}...")
+                                elif source_type == 'article':
+                                    article_count += 1
+                                    logger.debug(f"    [{article_count}] {info['title']}")
+                                    logger.debug(f"        Type: Article | Chunks: {info['chunks']} | ID: {resource_id[:12]}...")
+                except Exception as e:
+                    logger.warning(f"Could not get detailed resource information: {e}")
+        else:
+            logger.debug(f"✗ Vectorstore does not exist at: {self.chroma_persist_directory}")
+            logger.debug("  Vectorstore will be created when first document is added.")
+            if stats.get('error'):
+                logger.error(f"  Error: {stats['error']}")
+        
+        logger.debug("="*60 + "\n")
         
         if vectorstore is None:
             # Try to create an empty vectorstore as fallback
@@ -174,20 +227,48 @@ class ClutchAIAgent:
                     persist_directory=self.chroma_persist_directory,
                     embedding_function=OpenAIEmbeddings(api_key=self.openai_api_key),
                 )
+                if self.debug:
+                    logger.debug("Created empty vectorstore (will be populated when documents are added).")
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to initialize ChromaDB vectorstore at {self.chroma_persist_directory}: {e}"
                 ) from e
         
-        # Verify vectorstore has documents
-        try:
-            doc_count = vectorstore._collection.count()
-            if doc_count == 0:
-                print("Warning: Vectorstore exists but is empty. It will be populated on next update.")
-        except Exception as e:
-            print(f"Warning: Could not verify vectorstore document count: {e}")
-        
         return vectorstore
+    
+    def _load_agent_config(self) -> dict:
+        """
+        Load agent configuration from agent_config.yaml.
+        
+        Returns:
+            Dictionary with agent configuration
+        """
+        config_path = Path(__file__).parent / "agent_config.yaml"
+        
+        if not config_path.exists():
+            # Return default config if file doesn't exist
+            return {
+                'system_prompt': 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.',
+                'yahoo_fantasy_news_urls': []
+            }
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f) or {}
+            
+            # Ensure required keys exist with defaults
+            if 'system_prompt' not in config:
+                config['system_prompt'] = 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.'
+            if 'yahoo_fantasy_news_urls' not in config:
+                config['yahoo_fantasy_news_urls'] = []
+            
+            return config
+        except Exception as e:
+            logger.warning(f"Error loading agent_config.yaml: {e}. Using defaults.")
+            return {
+                'system_prompt': 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.',
+                'yahoo_fantasy_news_urls': []
+            }
     
     def _create_tools(self):
         """
@@ -208,10 +289,14 @@ class ClutchAIAgent:
         - Team Stats tools (2): team info, game log
         - Game tools (5): scoreboard, live scoreboard, box score, play-by-play, find games
         
+        Includes Yahoo Fantasy News tools:
+        - Web scraping tools (3-4): scrape Yahoo Fantasy NBA news, scrape any URL, map URL, 
+          and optionally map all configured URLs
+        
         - Vectorstore tool (1): retrieve contextual knowledge from vectorstore
         
         Returns:
-            List of tool instances (45+ Yahoo Fantasy tools + 16 NBA API tools + 1 vectorstore tool)
+            List of tool instances (45+ Yahoo Fantasy tools + 16 NBA API tools + 4-5 Yahoo Fantasy News tools + 1 vectorstore tool)
         """
         # Create Yahoo Fantasy tools using YahooFantasyTool class
         # This includes all 45 Yahoo Fantasy Sports API tools
@@ -223,6 +308,19 @@ class ClutchAIAgent:
         nba_tool = nbaAPITool()
         nba_tools = nba_tool.get_all_tools()
         
+        # Create Yahoo Fantasy News tools
+        news_urls = self.agent_config.get('yahoo_fantasy_news_urls', [])
+        yahoo_news_tools = []  # Initialize to empty list as default
+        
+        try:
+            logger.debug("Using Firecrawl SDK for Yahoo Fantasy News")
+            yahoo_news_tool = FantasyNewsTool(urls=news_urls, debug=self.debug)
+            yahoo_news_tools = yahoo_news_tool.get_all_tools()
+        except (ValueError, ImportError) as e:
+            # If Firecrawl API key is not set or firecrawl-py is not installed, skip these tools
+            logger.warning(f"Yahoo Fantasy News tools not available: {e}")
+            yahoo_news_tools = []
+        
         @tool("vectorstore_retriever", description="Retrieve contextual knowledge from the vectorstore.")
         def retrieve_vectorstore(query: str) -> str:
             """Retrieve contextual knowledge from the vectorstore."""
@@ -232,7 +330,7 @@ class ClutchAIAgent:
             except Exception as e:
                 return f"Failed to retrieve knowledge: {e}"
         
-        tools = yahoo_tools + nba_tools + [retrieve_vectorstore]
+        tools = yahoo_tools + nba_tools + yahoo_news_tools + [retrieve_vectorstore]
         return self._wrap_tools_with_debug_logging(tools)
 
     def _wrap_tools_with_debug_logging(self, tools):
@@ -248,16 +346,40 @@ class ClutchAIAgent:
             tool_func = getattr(tool, "func", None)
             if callable(tool_func):
                 def func_wrapper(*args, _orig=tool_func, _name=tool_name, **kwargs):
-                    print(f"🐛 [DEBUG] Tool '{_name}' called with args={args}, kwargs={kwargs}")
-                    return _orig(*args, **kwargs)
+                    logger.debug(f"Tool '{_name}' called with args={args}, kwargs={kwargs}")
+                    try:
+                        result = _orig(*args, **kwargs)
+                        # Truncate long responses for readability
+                        result_str = str(result)
+                        if len(result_str) > 1000:
+                            result_preview = result_str[:1000] + f"... (truncated, total length: {len(result_str)})"
+                            logger.debug(f"Tool '{_name}' response: {result_preview}")
+                        else:
+                            logger.debug(f"Tool '{_name}' response: {result_str}")
+                        return result
+                    except Exception as e:
+                        logger.debug(f"Tool '{_name}' raised exception: {e}", exc_info=True)
+                        raise
 
                 updates["func"] = func_wrapper
 
             tool_coroutine = getattr(tool, "coroutine", None)
             if callable(tool_coroutine):
                 async def coroutine_wrapper(*args, _orig=tool_coroutine, _name=tool_name, **kwargs):
-                    print(f"🐛 [DEBUG] Tool '{_name}' coroutine called with args={args}, kwargs={kwargs}")
-                    return await _orig(*args, **kwargs)
+                    logger.debug(f"Tool '{_name}' coroutine called with args={args}, kwargs={kwargs}")
+                    try:
+                        result = await _orig(*args, **kwargs)
+                        # Truncate long responses for readability
+                        result_str = str(result)
+                        if len(result_str) > 1000:
+                            result_preview = result_str[:1000] + f"... (truncated, total length: {len(result_str)})"
+                            logger.debug(f"Tool '{_name}' response: {result_preview}")
+                        else:
+                            logger.debug(f"Tool '{_name}' response: {result_str}")
+                        return result
+                    except Exception as e:
+                        logger.debug(f"Tool '{_name}' raised exception: {e}", exc_info=True)
+                        raise
 
                 updates["coroutine"] = coroutine_wrapper
 
@@ -265,9 +387,9 @@ class ClutchAIAgent:
                 try:
                     tool = tool.copy(update=updates)
                 except Exception as exc:  # pragma: no cover - debug logging only
-                    print(f"🐛 [DEBUG] Failed to wrap tool '{tool_name}': {exc}")
+                    logger.debug(f"Failed to wrap tool '{tool_name}': {exc}")
             elif updates and self.debug:
-                print(f"🐛 [DEBUG] Tool '{tool_name}' does not support copy(); skipping debug wrap")
+                logger.debug(f"Tool '{tool_name}' does not support copy(); skipping debug wrap")
 
             wrapped_tools.append(tool)
 

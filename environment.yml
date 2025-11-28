@@ -1,0 +1,46 @@
+name: ClutchAI
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    # Data Processing
+    - pandas
+    - numpy
+    - python-dateutil
+    # Utilities
+    - python-dotenv
+    - pyyaml
+    # Yahoo Fantasy API
+    - yfpy
+    # NBA API
+    - nba_api
+    # LLM and AI
+    - openai
+    - tiktoken
+    - langchain
+    - langchain-openai
+    - langchainhub
+    - langchain_community
+    - langchain-text-splitters
+    # Youtube Transcript
+    - youtube_transcript_api
+    # Web Scraping
+    - scrapy
+    - requests
+    - beautifulsoup4
+    - openpyxl
+    - selenium
+    - unstructured
+    - firecrawl-py
+    # Vector Database - ChromaDB (Local)
+    - chromadb
+    # Streamlit Web App
+    - streamlit
+    # Testing
+    - pytest
+    - pytest-cov
+    - pytest-mock
+
