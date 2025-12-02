@@ -4,4 +4,9 @@ system_prompt: You are a helpful assistant for a Yahoo Fantasy Sports league man
 yahoo_fantasy_news_urls:
   - https://sports.yahoo.com/nba/news/
   - https://www.nba.com/news
-  - https://www.rotowire.com/basketball/
+  - https://www.rotowire.com/basketball/articles/
+
+
+# URL for Hashtag Basketball Dynasty Rankings
+dynasty_rankings_url: 
+  - https://hashtagbasketball.com/fantasy-basketball-dynasty-rankings

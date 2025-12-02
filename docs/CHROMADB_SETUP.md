@@ -112,7 +112,7 @@ For production use with ChromaDB:
 
 ## Adding Resources to Vectorstore
 
-To add YouTube videos or articles to your vectorstore, edit `ClutchAI/rag/vectordata.yaml` and then use the `VectorstoreManager`:
+To add YouTube videos or articles to your vectorstore, edit `ClutchAI/rag/vector_data.yaml` and then use the `VectorstoreManager`:
 
 ```python
 from ClutchAI.rag.vectorstore import VectorstoreManager

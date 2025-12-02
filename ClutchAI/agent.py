@@ -11,7 +11,7 @@ import yaml
 from pathlib import Path
 from typing import Optional
 
-from langchain_core.tools import tool
+from langchain_core.tools import tool, StructuredTool
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -22,6 +22,7 @@ from ClutchAI.rag.vector_manager import VectorstoreManager
 from ClutchAI.tools.yahoo_api import YahooFantasyTool
 from ClutchAI.tools.nba_api import nbaAPITool
 from ClutchAI.tools.fantasy_news import FantasyNewsTool
+from ClutchAI.tools.dynasty_ranking import DynastyRankingTool
 
 logger = get_logger(__name__)
 
@@ -293,36 +294,34 @@ class ClutchAIAgent:
         - Web scraping tools (3-4): scrape Yahoo Fantasy NBA news, scrape any URL, map URL, 
           and optionally map all configured URLs
         
+        Includes Dynasty Rankings tools:
+        - Dynasty ranking tools (3): get player dynasty rank, search players by name, refresh rankings
+        
         - Vectorstore tool (1): retrieve contextual knowledge from vectorstore
         
         Returns:
-            List of tool instances (45+ Yahoo Fantasy tools + 16 NBA API tools + 4-5 Yahoo Fantasy News tools + 1 vectorstore tool)
+            List of tool instances (45+ Yahoo Fantasy tools + 16 NBA API tools + 4-5 Yahoo Fantasy News tools + 3 Dynasty Ranking tools + 1 vectorstore tool)
         """
         # Create Yahoo Fantasy tools using YahooFantasyTool class
         # This includes all 45 Yahoo Fantasy Sports API tools
-        yahoo_tool = YahooFantasyTool(self.query)
+        yahoo_tool = YahooFantasyTool(self.query, debug=self.debug)
         yahoo_tools = yahoo_tool.get_all_tools()
         
         # Create NBA API tools using nbaAPITool class
         # This includes all 16 NBA API tools
-        nba_tool = nbaAPITool()
+        nba_tool = nbaAPITool(debug=self.debug)
         nba_tools = nba_tool.get_all_tools()
         
         # Create Yahoo Fantasy News tools
         news_urls = self.agent_config.get('yahoo_fantasy_news_urls', [])
-        yahoo_news_tools = []  # Initialize to empty list as default
+        yahoo_news_tool = FantasyNewsTool(urls=news_urls, debug=self.debug)
+        yahoo_news_tools = yahoo_news_tool.get_all_tools()
         
-        try:
-            logger.debug("Using Firecrawl SDK for Yahoo Fantasy News")
-            yahoo_news_tool = FantasyNewsTool(urls=news_urls, debug=self.debug)
-            yahoo_news_tools = yahoo_news_tool.get_all_tools()
-        except (ValueError, ImportError) as e:
-            # If Firecrawl API key is not set or firecrawl-py is not installed, skip these tools
-            logger.warning(f"Yahoo Fantasy News tools not available: {e}")
-            yahoo_news_tools = []
+        # Create Dynasty Ranking tools
+        dynasty_ranking_tool = DynastyRankingTool(debug=self.debug)
+        dynasty_ranking_tools = dynasty_ranking_tool.get_all_tools()
         
-        @tool("vectorstore_retriever", description="Retrieve contextual knowledge from the vectorstore.")
-        def retrieve_vectorstore(query: str) -> str:
+        def retrieve_vectorstore_func(query: str) -> str:
             """Retrieve contextual knowledge from the vectorstore."""
             try:
                 results = self.retriever.invoke(query)
@@ -330,71 +329,45 @@ class ClutchAIAgent:
             except Exception as e:
                 return f"Failed to retrieve knowledge: {e}"
         
-        tools = yahoo_tools + nba_tools + yahoo_news_tools + [retrieve_vectorstore]
-        return self._wrap_tools_with_debug_logging(tools)
+        retrieve_vectorstore = StructuredTool.from_function(
+            func=retrieve_vectorstore_func,
+            name="vectorstore_retriever",
+            description="Retrieve contextual knowledge from the vectorstore."
+        )
+        
+        # Ensure all tool lists are lists (not None)
+        yahoo_tools = yahoo_tools or []
+        nba_tools = nba_tools or []
+        yahoo_news_tools = yahoo_news_tools or []
+        dynasty_ranking_tools = dynasty_ranking_tools or []
+        
+        tools = yahoo_tools + nba_tools + yahoo_news_tools + dynasty_ranking_tools + [retrieve_vectorstore]
+        
+        # Log all tools
+        self._log_all_tools(tools)
+        
+        return tools
 
-    def _wrap_tools_with_debug_logging(self, tools):
-        """Add terminal debug logging to each tool when debug mode is enabled."""
-        if not self.debug:
-            return tools
+    def _log_all_tools(self, tools):
+        """
+        Log all available tool names.
+        
+        Args:
+            tools: List of all tools
+        """
+        logger.info("\n" + "="*60)
+        logger.info(f"Available Tools ({len(tools)}):")
+        logger.info("="*60)
+        
+        for i, tool in enumerate(tools, 1):
+            try:
+                tool_name = getattr(tool, 'name', getattr(tool, '__name__', f'<unnamed tool {i}>'))
+                logger.info(f"  [{i:3d}] {tool_name}")
+            except Exception as e:
+                logger.error(f"  [{i:3d}] Error getting tool name: {e}")
+        
+        logger.info("="*60 + "\n")
 
-        wrapped_tools = []
-        for tool in tools:
-            tool_name = getattr(tool, "name", tool.__class__.__name__)
-            updates = {}
-
-            tool_func = getattr(tool, "func", None)
-            if callable(tool_func):
-                def func_wrapper(*args, _orig=tool_func, _name=tool_name, **kwargs):
-                    logger.debug(f"Tool '{_name}' called with args={args}, kwargs={kwargs}")
-                    try:
-                        result = _orig(*args, **kwargs)
-                        # Truncate long responses for readability
-                        result_str = str(result)
-                        if len(result_str) > 1000:
-                            result_preview = result_str[:1000] + f"... (truncated, total length: {len(result_str)})"
-                            logger.debug(f"Tool '{_name}' response: {result_preview}")
-                        else:
-                            logger.debug(f"Tool '{_name}' response: {result_str}")
-                        return result
-                    except Exception as e:
-                        logger.debug(f"Tool '{_name}' raised exception: {e}", exc_info=True)
-                        raise
-
-                updates["func"] = func_wrapper
-
-            tool_coroutine = getattr(tool, "coroutine", None)
-            if callable(tool_coroutine):
-                async def coroutine_wrapper(*args, _orig=tool_coroutine, _name=tool_name, **kwargs):
-                    logger.debug(f"Tool '{_name}' coroutine called with args={args}, kwargs={kwargs}")
-                    try:
-                        result = await _orig(*args, **kwargs)
-                        # Truncate long responses for readability
-                        result_str = str(result)
-                        if len(result_str) > 1000:
-                            result_preview = result_str[:1000] + f"... (truncated, total length: {len(result_str)})"
-                            logger.debug(f"Tool '{_name}' response: {result_preview}")
-                        else:
-                            logger.debug(f"Tool '{_name}' response: {result_str}")
-                        return result
-                    except Exception as e:
-                        logger.debug(f"Tool '{_name}' raised exception: {e}", exc_info=True)
-                        raise
-
-                updates["coroutine"] = coroutine_wrapper
-
-            if updates and hasattr(tool, "copy"):
-                try:
-                    tool = tool.copy(update=updates)
-                except Exception as exc:  # pragma: no cover - debug logging only
-                    logger.debug(f"Failed to wrap tool '{tool_name}': {exc}")
-            elif updates and self.debug:
-                logger.debug(f"Tool '{tool_name}' does not support copy(); skipping debug wrap")
-
-            wrapped_tools.append(tool)
-
-        return wrapped_tools
-    
     def invoke(self, messages: list) -> dict:
         """
         Invoke the agent with a list of messages.

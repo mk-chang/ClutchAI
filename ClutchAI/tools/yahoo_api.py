@@ -14,13 +14,15 @@ class YahooFantasyTool(ClutchAITool):
     Provides tools for all Yahoo Fantasy Sports API get_* methods.
     """
     
-    def __init__(self, query: YahooFantasySportsQuery):
+    def __init__(self, query: YahooFantasySportsQuery, debug: bool = False):
         """
         Initialize YahooFantasyTool with a YahooFantasySportsQuery instance.
         
         Args:
             query: YahooFantasySportsQuery instance
+            debug: Enable debug logging (default: False)
         """
+        super().__init__(debug=debug)
         self.query = query
  
     def _format_response(self, data) -> str:
@@ -689,7 +691,7 @@ class YahooFantasyTool(ClutchAITool):
         Returns:
             List of all LangChain tool instances
         """
-        return [
+        tools = [
             # Game tools
             self.create_get_all_yahoo_fantasy_game_keys_tool(),
             self.create_get_game_key_by_season_tool(),
@@ -739,3 +741,4 @@ class YahooFantasyTool(ClutchAITool):
             self.create_get_player_percent_owned_by_week_tool(),
             self.create_get_player_draft_analysis_tool(),
         ]
+        return tools

@@ -11,28 +11,18 @@ from langchain_core.tools import BaseTool as LangChainBaseTool
 from ClutchAI.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Import Firecrawl
 try:
     from firecrawl import Firecrawl
-    FirecrawlApp = Firecrawl  # Alias for backward compatibility
-    # Try to get version
     try:
         import firecrawl
         FIRECRAWL_VERSION = getattr(firecrawl, '__version__', None)
     except (ImportError, AttributeError):
         FIRECRAWL_VERSION = None
 except ImportError:
-    try:
-        from firecrawl import FirecrawlApp
-        # Try to get version
-        try:
-            import firecrawl
-            FIRECRAWL_VERSION = getattr(firecrawl, '__version__', None)
-        except (ImportError, AttributeError):
-            FIRECRAWL_VERSION = None
-    except ImportError:
-        FirecrawlApp = None
-        Firecrawl = None
-        FIRECRAWL_VERSION = None
+    Firecrawl = None
+    FIRECRAWL_VERSION = None
 
 
 class ClutchAITool(ABC):
@@ -45,6 +35,16 @@ class ClutchAITool(ABC):
     3. Implement get_all_tools to return a list of tool instances
     4. Create individual tool methods using @tool decorator
     """
+    
+    def __init__(self, debug: bool = False):
+        """
+        Initialize ClutchAITool.
+        
+        Args:
+            debug: Enable debug logging (default: False)
+        """
+        self.debug = debug
+        self.logger = get_logger(self.__class__.__name__)
     
     def _format_response(self, data) -> str:
         """
@@ -96,14 +96,14 @@ class FirecrawlTool(ClutchAITool):
     Base class for Firecrawl-based tools that use the Firecrawl API.
     
     This class provides common functionality for tools that interact with Firecrawl:
-    - FirecrawlApp initialization and API key management
+    - Firecrawl initialization and API key management
     - Common response formatting for Firecrawl responses
     - Shared utility methods
     
     Subclasses should:
-    1. Call super().__init__(api_key) in their __init__
+    1. Call super().__init__(api_key, debug) in their __init__
     2. Implement get_all_tools to return their specific tool instances
-    3. Use self.app to access the FirecrawlApp instance
+    3. Use self.app to access the Firecrawl instance
     """
     
     def __init__(self, api_key: Optional[str] = None, debug: bool = False):
@@ -114,7 +114,9 @@ class FirecrawlTool(ClutchAITool):
             api_key: Firecrawl API key (or from env FIRECRAWL_API_KEY)
             debug: Enable debug logging (default: False)
         """
-        if Firecrawl is None and FirecrawlApp is None:
+        super().__init__(debug=debug)
+        
+        if Firecrawl is None:
             raise ImportError(
                 "firecrawl-py is not installed. Please install it with: pip install firecrawl-py"
             )
@@ -125,18 +127,12 @@ class FirecrawlTool(ClutchAITool):
                 "Firecrawl API key is required. Set FIRECRAWL_API_KEY env var or pass api_key parameter."
             )
         
-        # Use Firecrawl (v2) if available, otherwise fall back to FirecrawlApp (v1)
-        if Firecrawl is not None:
-            self.app = Firecrawl(api_key=self.api_key)
-            version_info = "v2"
-        else:
-            self.app = FirecrawlApp(api_key=self.api_key)
-            version_info = "v1"
+        self.app = Firecrawl(api_key=self.api_key)
         
         # Log version information in debug mode
         if debug:
             version_str = f" (version {FIRECRAWL_VERSION})" if FIRECRAWL_VERSION else ""
-            logger.debug(f"Firecrawl initialized: {version_info}{version_str}")
+            logger.debug(f"Firecrawl initialized{version_str}")
             if FIRECRAWL_VERSION is None:
                 logger.debug("Note: Could not detect Firecrawl package version")
     

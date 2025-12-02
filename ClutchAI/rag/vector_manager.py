@@ -33,7 +33,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from ClutchAI.rag.data_pipelines import (
     BaseVectorManager,
     YoutubeVectorManager,
+    YoutubeChannelVectorManager,
     ArticleVectorManager,
+    add_youtube_channel_to_vectorstore,
 )
 from ClutchAI.rag.data_class import YouTubeVideo
 
@@ -63,7 +65,7 @@ class VectorstoreManager:
         Initialize the VectorstoreManager.
         
         Args:
-            vectordata_yaml: Path to YAML file storing resource data (default: ClutchAI/vectordata.yaml)
+            vectordata_yaml: Path to YAML file storing resource data (default: ClutchAI/vector_data.yaml)
             chroma_persist_directory: Directory for ChromaDB persistence (default: data/chroma_db)
             openai_api_key: OpenAI API key for embeddings (or from env)
             env_file_location: Path to .env file location
@@ -81,7 +83,7 @@ class VectorstoreManager:
         
         # Set default paths
         if vectordata_yaml is None:
-            self.vectordata_yaml = self.env_file_location / "ClutchAI" / "vectordata.yaml"
+            self.vectordata_yaml = self.env_file_location / "ClutchAI" / "vector_data.yaml"
         else:
             self.vectordata_yaml = Path(vectordata_yaml)
         
@@ -316,9 +318,10 @@ class VectorstoreManager:
                         stats['urls_in_vectorstore'] = len(youtube_urls) + len(article_urls)
                 except Exception as e:
                     print(f"Warning: Error getting URL stats: {e}")
-                    # Fallback to simple count
+                    # Fallback: use resource IDs count
                     youtube_manager = self._get_youtube_manager()
-                    stats['urls_in_vectorstore'] = len(youtube_manager.get_existing_urls())
+                    existing_ids = youtube_manager.get_existing_resource_ids()
+                    stats['urls_in_vectorstore'] = len(existing_ids)
         except Exception as e:
             stats['error'] = str(e)
         
@@ -332,3 +335,55 @@ class VectorstoreManager:
             Chroma vectorstore instance if it exists, None otherwise
         """
         return self._get_vectorstore(create_if_needed=False)
+    
+    def add_youtube_channel_podcasts(
+        self,
+        channel_handle: str,
+        youtube_api_key: Optional[str] = None,
+        season_start: str = "2025-07-01",
+        season_end: str = "2026-06-30",
+        chunk_size_seconds: int = 30,
+        skip_existing: bool = True,
+        estimate_only: bool = False
+    ) -> Dict[str, any]:
+        """
+        Pipeline to fetch all videos from a YouTube channel published during NBA season and add to vectorstore.
+        
+        This is a convenience method that uses the YoutubeVectorManager to process channel videos.
+        
+        Args:
+            channel_handle: YouTube channel handle (e.g., '@LockedOnFantasyBasketball')
+            youtube_api_key: YouTube Data API v3 key (or from YOUTUBE_API_KEY env var)
+            season_start: Start date of NBA season (YYYY-MM-DD format, default: 2025-07-01)
+            season_end: End date of NBA season (YYYY-MM-DD format, default: 2026-06-30)
+            chunk_size_seconds: Size of transcript chunks in seconds
+            skip_existing: Skip videos already in vectorstore
+            estimate_only: If True, only return estimates without processing videos
+            
+        Returns:
+            Dictionary with results including videos_found, videos_added, chunks_added, 
+            estimated_time_minutes, estimated_memory_mb, etc.
+        """
+        # Get YouTube API key
+        if youtube_api_key is None:
+            youtube_api_key = os.environ.get('YOUTUBE_API_KEY')
+        if not youtube_api_key:
+            raise ValueError(
+                "YouTube API key is required. Set YOUTUBE_API_KEY env var or pass youtube_api_key parameter."
+            )
+        
+        # Get YouTube manager
+        youtube_manager = self._get_youtube_manager()
+        
+        # Call the pipeline function
+        return add_youtube_channel_to_vectorstore(
+            channel_handle=channel_handle,
+            youtube_api_key=youtube_api_key,
+            youtube_manager=youtube_manager,
+            season_start=season_start,
+            season_end=season_end,
+            chunk_size_seconds=chunk_size_seconds,
+            skip_existing=skip_existing,
+            estimate_only=estimate_only
+        )
+

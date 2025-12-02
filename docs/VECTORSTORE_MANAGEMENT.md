@@ -18,7 +18,7 @@ Edit the YAML file to add your resources.
 
 #### Manually (Edit YAML file):
 
-Resources are stored in `ClutchAI/rag/vectordata.yaml`. You can edit this file directly:
+Resources are stored in `ClutchAI/rag/vector_data.yaml`. You can edit this file directly:
 
 ```yaml
 youtube:
@@ -100,10 +100,10 @@ from pathlib import Path
 # Load environment variables
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-# Initialize manager (will use ClutchAI/rag/vectordata.yaml by default)
+# Initialize manager (will use ClutchAI/rag/vector_data.yaml by default)
 manager = VectorstoreManager()
 
-# 1. Edit ClutchAI/rag/vectordata.yaml to add your resources
+# 1. Edit ClutchAI/rag/vector_data.yaml to add your resources
 #    (See example YAML structure above)
 
 # 2. Update vectorstore with all resources from YAML file
@@ -128,7 +128,7 @@ print(f"  - Documents in vectorstore: {stats['document_count']}")
 
 ## File Locations
 
-- **Resources configuration**: `ClutchAI/rag/vectordata.yaml`
+- **Resources configuration**: `ClutchAI/rag/vector_data.yaml`
 - **Vectorstore**: `ClutchAI/rag/chroma_db/` (created automatically by VectorstoreManager)
 - **Default location**: When using `ClutchAIAgent`, the vectorstore is automatically initialized at `ClutchAI/rag/chroma_db/`
 
@@ -177,10 +177,10 @@ print(f"  - Documents in vectorstore: {stats['document_count']}")
 
 The vectorstore created by `VectorstoreManager` is compatible with `ClutchAIAgent`. The agent automatically:
 - Initializes the vectorstore at `ClutchAI/rag/chroma_db/` when created
-- Updates the vectorstore with resources from `ClutchAI/rag/vectordata.yaml` on initialization
+- Updates the vectorstore with resources from `ClutchAI/rag/vector_data.yaml` on initialization
 - Uses the vectorstore for RAG queries when answering questions about your fantasy league
 
-You don't need to manually manage the vectorstore when using `ClutchAIAgent` - it handles everything automatically. Just make sure your `ClutchAI/rag/vectordata.yaml` file is up to date with the resources you want to include.
+You don't need to manually manage the vectorstore when using `ClutchAIAgent` - it handles everything automatically. Just make sure your `ClutchAI/rag/vector_data.yaml` file is up to date with the resources you want to include.
 
 
 

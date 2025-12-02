@@ -2,7 +2,7 @@
 ClutchAI tools package.
 """
 
-from ClutchAI.tools.yahoofantasy import YahooFantasyTool
+from ClutchAI.tools.yahoo_api import YahooFantasyTool
 
 __all__ = ['YahooFantasyTool']
 

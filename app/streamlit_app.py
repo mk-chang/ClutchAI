@@ -20,8 +20,7 @@ DEBUG_MODE = (
     or os.environ.get("CLUTCHAI_DEBUG", "").lower() in ("1", "true", "yes")
 )
 
-if DEBUG_MODE:
-    print("🐛 [DEBUG] Debug mode enabled - verbose logging to terminal is active")
+# Logging will be set up after imports
 
 # Add project root to Python path so we can import ClutchAI
 current_file = Path(__file__).resolve()
@@ -42,7 +41,15 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import streamlit as st
+from ClutchAI.logger import setup_logging, get_logger
 from ClutchAI.agent import ClutchAIAgent
+
+# Setup logging early
+setup_logging(debug=DEBUG_MODE)
+logger = get_logger(__name__)
+
+if DEBUG_MODE:
+    logger.info("Debug mode enabled - verbose logging to terminal is active")
 
 # Load environment variables from .env file
 env_file_location = project_root
@@ -124,8 +131,7 @@ if openai_api_key and yahoo_league_id:
     if st.session_state.get("agent_key") != agent_key or st.session_state["agent"] is None:
         with st.spinner("Initializing ClutchAI Agent..."):
             try:
-                if DEBUG_MODE:
-                    print("🐛 [DEBUG] Initializing ClutchAI Agent with debug mode enabled")
+                logger.debug("Initializing ClutchAI Agent with debug mode enabled")
                 st.session_state["agent"] = ClutchAIAgent(
                     yahoo_league_id=league_id_int,
                     yahoo_client_id=yahoo_client_id or None,
@@ -135,15 +141,11 @@ if openai_api_key and yahoo_league_id:
                     debug=DEBUG_MODE,
                 )
                 st.session_state["agent_key"] = agent_key
-                if DEBUG_MODE:
-                    print("🐛 [DEBUG] ClutchAI Agent initialized successfully")
+                logger.debug("ClutchAI Agent initialized successfully")
             except Exception as e:
                 error_msg = f"Failed to initialize agent: {e}"
                 st.error(error_msg)
-                if DEBUG_MODE:
-                    import traceback
-                    print("🐛 [DEBUG] Agent initialization error:")
-                    traceback.print_exc()
+                logger.error("Agent initialization error", exc_info=True)
                 st.session_state["agent"] = None
                 st.session_state["agent_key"] = None
 
@@ -172,19 +174,14 @@ if prompt := st.chat_input():
         try:
             # Pass conversation history (excluding the current prompt which is already added)
             conversation_history = st.session_state.messages[:-1]  # All messages except the one we just added
-            if DEBUG_MODE:
-                print(f"🐛 [DEBUG] Processing prompt: {prompt[:100]}...")
+            logger.debug(f"Processing prompt: {prompt[:100]}...")
             response = st.session_state["agent"].chat(prompt, conversation_history=conversation_history)
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.chat_message("assistant").write(response)
-            if DEBUG_MODE:
-                print(f"🐛 [DEBUG] Response generated successfully ({len(response)} characters)")
+            logger.debug(f"Response generated successfully ({len(response)} characters)")
         except Exception as e:
             error_msg = f"Error: {str(e)}"
             st.error(error_msg)
-            if DEBUG_MODE:
-                import traceback
-                print("🐛 [DEBUG] Chat error:")
-                traceback.print_exc()
+            logger.error("Chat error", exc_info=True)
             st.session_state.messages.append({"role": "assistant", "content": error_msg})
             st.chat_message("assistant").write(error_msg)

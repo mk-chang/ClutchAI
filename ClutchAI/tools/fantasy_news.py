@@ -241,15 +241,21 @@ class FantasyNewsTool(FirecrawlTool):
         Get all available Yahoo Fantasy News tools.
         
         Returns:
-            List of all LangChain tool instances
+            List of all LangChain tool instances (empty list if initialization failed)
         """
-        tools = [
-            self.create_scrape_url_tool(),
-            self.create_map_url_tool(),
-        ]
-        
-        # Only add map_all tool if URLs are configured
-        if self.urls:
-            tools.append(self.create_map_all_configured_urls_tool())
-        
-        return tools
+        try:
+            tools = [
+                self.create_scrape_url_tool(),
+                self.create_map_url_tool(),
+            ]
+            
+            # Only add map_all tool if URLs are configured
+            if self.urls:
+                tools.append(self.create_map_all_configured_urls_tool())
+            
+            return tools
+        except (ValueError, ImportError) as e:
+            from ClutchAI.logger import get_logger
+            logger = get_logger(__name__)
+            logger.warning(f"Yahoo Fantasy News tools not available: {e}")
+            return []

@@ -35,7 +35,7 @@ class BaseVectorManager(ABC):
     def __init__(
         self,
         vectorstore: Optional[Chroma],
-        embeddings: OpenAIEmbeddings,
+        embeddings: Optional[OpenAIEmbeddings],
         persist_directory: str,
         vectordata_yaml: Optional[Path] = None,
     ):
@@ -44,7 +44,7 @@ class BaseVectorManager(ABC):
         
         Args:
             vectorstore: Chroma vectorstore instance to use (can be None, will be created on first use)
-            embeddings: OpenAIEmbeddings instance for document embedding
+            embeddings: OpenAIEmbeddings instance for document embedding (optional, required for adding documents)
             persist_directory: Directory path for ChromaDB persistence
             vectordata_yaml: Path to YAML file with resource data (optional, can be passed to methods)
         """
@@ -59,6 +59,8 @@ class BaseVectorManager(ABC):
         if self._vectorstore is None:
             # Check if vectorstore exists
             if os.path.exists(self.persist_directory) and os.listdir(self.persist_directory):
+                if self.embeddings is None:
+                    return None
                 try:
                     self._vectorstore = Chroma(
                         persist_directory=self.persist_directory,
@@ -193,6 +195,9 @@ class BaseVectorManager(ABC):
         Args:
             docs: List of Document objects to add
         """
+        if self.embeddings is None:
+            raise ValueError("Embeddings are required to add documents to vectorstore")
+        
         try:
             vs = self.vectorstore
             if vs is None:
@@ -688,6 +693,380 @@ class YoutubeVectorManager(BaseVectorManager):
         )
 
 
+class YoutubeChannelVectorManager(YoutubeVectorManager):
+    """
+    Manager for ingesting entire YouTube channels into a vectorstore.
+    
+    This class extends YoutubeVectorManager with channel-level operations including:
+    - Fetching all videos from a YouTube channel
+    - Processing channel videos in bulk
+    - Estimating processing requirements
+    - Adding channel videos to vectorstore
+    """
+    
+    def fetch_channel_videos(
+        self,
+        channel_handle: str,
+        youtube_api_key: str,
+        published_after: Optional[str] = None,
+        published_before: Optional[str] = None,
+        max_results: Optional[int] = None
+    ) -> List[Dict[str, any]]:
+        """
+        Fetch all videos from a YouTube channel using YouTube Data API v3.
+        
+        Args:
+            channel_handle: YouTube channel handle (e.g., '@LockedOnFantasyBasketball' or 'UC...')
+            youtube_api_key: YouTube Data API v3 key
+            published_after: Filter videos published after this date (ISO 8601 format: YYYY-MM-DD)
+            published_before: Filter videos published before this date (ISO 8601 format: YYYY-MM-DD)
+            max_results: Maximum number of videos to fetch (None for all)
+            
+        Returns:
+            List of dictionaries with video information (id, title, url, publishedAt, etc.)
+        """
+        try:
+            from googleapiclient.discovery import build
+            from googleapiclient.errors import HttpError
+        except ImportError:
+            raise ImportError(
+                "google-api-python-client is required. Install it with: pip install google-api-python-client"
+            )
+        
+        youtube = build('youtube', 'v3', developerKey=youtube_api_key)
+        videos = []
+        next_page_token = None
+        
+        # Convert channel handle to channel ID if needed
+        channel_id = None
+        if channel_handle.startswith('@'):
+            # Handle format: @channelname - extract the handle name
+            handle_name = channel_handle[1:]  # Remove @
+            
+            # Try to get channel by custom URL (handle)
+            try:
+                # First try using search API
+                search_response = youtube.search().list(
+                    q=channel_handle,
+                    type='channel',
+                    part='id',
+                    maxResults=1
+                ).execute()
+                
+                if search_response.get('items'):
+                    channel_id = search_response['items'][0]['id']['channelId']
+                else:
+                    # Fallback: try channels().list with forUsername (legacy, may not work for @ handles)
+                    # For @ handles, we need to use the custom URL format
+                    # The handle maps to youtube.com/@handle, but API doesn't directly support this
+                    # So we'll use search as primary method
+                    raise ValueError(f"Channel not found: {channel_handle}. Make sure the handle is correct.")
+            except HttpError as e:
+                raise ValueError(f"Error finding channel {channel_handle}: {e}")
+            except ValueError as e:
+                raise
+        elif channel_handle.startswith('UC') and len(channel_handle) == 24:
+            # Already a channel ID (starts with UC and is 24 chars)
+            channel_id = channel_handle
+        else:
+            # Try to use as channel ID or custom URL
+            # If it contains /, it might be a full URL
+            if '/' in channel_handle:
+                # Extract from URL like https://www.youtube.com/@channelname
+                import re
+                match = re.search(r'@([^/?]+)', channel_handle)
+                if match:
+                    handle_name = match.group(1)
+                    # Use search to find channel
+                    search_response = youtube.search().list(
+                        q=f"@{handle_name}",
+                        type='channel',
+                        part='id',
+                        maxResults=1
+                    ).execute()
+                    if search_response.get('items'):
+                        channel_id = search_response['items'][0]['id']['channelId']
+                    else:
+                        raise ValueError(f"Channel not found in URL: {channel_handle}")
+                else:
+                    raise ValueError(f"Could not extract channel handle from URL: {channel_handle}")
+            else:
+                # Assume it's a channel ID
+                channel_id = channel_handle
+        
+        # Build search parameters
+        search_params = {
+            'channelId': channel_id,
+            'type': 'video',
+            'part': 'id',
+            'order': 'date',
+            'maxResults': 50  # Maximum per request
+        }
+        
+        if published_after:
+            search_params['publishedAfter'] = f"{published_after}T00:00:00Z"
+        if published_before:
+            search_params['publishedBefore'] = f"{published_before}T23:59:59Z"
+        
+        # Fetch all videos
+        while True:
+            if next_page_token:
+                search_params['pageToken'] = next_page_token
+            
+            try:
+                search_response = youtube.search().list(**search_params).execute()
+            except HttpError as e:
+                raise ValueError(f"YouTube API error: {e}")
+            
+            video_ids = [item['id']['videoId'] for item in search_response.get('items', [])]
+            
+            if not video_ids:
+                break
+            
+            # Get detailed video information
+            video_details = youtube.videos().list(
+                part='snippet,contentDetails,statistics',
+                id=','.join(video_ids)
+            ).execute()
+            
+            for video in video_details.get('items', []):
+                video_info = {
+                    'id': video['id'],
+                    'title': video['snippet']['title'],
+                    'description': video['snippet'].get('description', ''),
+                    'publishedAt': video['snippet']['publishedAt'],
+                    'url': f"https://www.youtube.com/watch?v={video['id']}",
+                    'duration': video['contentDetails'].get('duration', ''),
+                    'viewCount': int(video['statistics'].get('viewCount', 0)),
+                }
+                videos.append(video_info)
+                
+                if max_results and len(videos) >= max_results:
+                    return videos
+            
+            # Check for next page
+            next_page_token = search_response.get('nextPageToken')
+            if not next_page_token:
+                break
+        
+        return videos
+    
+    def _estimate_processing_requirements(
+        self,
+        videos: List[Dict[str, any]],
+        chunk_size_seconds: Optional[int] = None
+    ) -> Dict[str, float]:
+        """
+        Estimate time and memory requirements for processing YouTube videos.
+        
+        Args:
+            videos: List of video dictionaries with duration and other info
+            chunk_size_seconds: Size of transcript chunks in seconds (uses instance default if not provided)
+            
+        Returns:
+            Dictionary with estimated_time_minutes and estimated_memory_mb
+        """
+        import re
+        from datetime import timedelta
+        
+        chunk_size = chunk_size_seconds if chunk_size_seconds is not None else self.chunk_size_seconds
+        
+        def parse_duration(duration_str: str) -> int:
+            """Parse ISO 8601 duration (e.g., PT1H30M15S) to seconds."""
+            if not duration_str:
+                return 0
+            pattern = r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?'
+            match = re.match(pattern, duration_str)
+            if not match:
+                return 0
+            hours = int(match.group(1) or 0)
+            minutes = int(match.group(2) or 0)
+            seconds = int(match.group(3) or 0)
+            return hours * 3600 + minutes * 60 + seconds
+        
+        # Estimate based on video durations
+        total_duration_seconds = 0
+        total_videos = len(videos)
+        
+        for video in videos:
+            duration_seconds = parse_duration(video.get('duration', ''))
+            if duration_seconds == 0:
+                # Default estimate: 30 minutes per video if duration unknown
+                duration_seconds = 30 * 60
+            total_duration_seconds += duration_seconds
+        
+        # Estimate chunks
+        # Average podcast is ~30-60 minutes, chunked every 30 seconds
+        # So roughly 60-120 chunks per video
+        estimated_chunks_per_video = total_duration_seconds / chunk_size if total_videos > 0 else 0
+        total_chunks = estimated_chunks_per_video * total_videos
+        
+        # Time estimates (in seconds per operation)
+        # - YouTube API fetch: ~0.5s per video (batch requests)
+        # - Transcript download: ~2-5s per video
+        # - Text chunking: ~0.1s per chunk
+        # - Embedding generation: ~0.5s per chunk (OpenAI API)
+        # - Vectorstore insertion: ~0.1s per chunk
+        
+        api_fetch_time = total_videos * 0.5
+        transcript_time = total_videos * 3.5  # Average
+        chunking_time = total_chunks * 0.1
+        embedding_time = total_chunks * 0.5  # OpenAI API rate limit considered
+        insertion_time = total_chunks * 0.1
+        
+        # Add 20% overhead for network delays, retries, etc.
+        total_time_seconds = (api_fetch_time + transcript_time + chunking_time + 
+                             embedding_time + insertion_time) * 1.2
+        
+        estimated_time_minutes = total_time_seconds / 60
+        
+        # Memory estimates (in MB)
+        # - Each chunk: ~1-2 KB text + ~1.5 KB embedding (1536 dims * 4 bytes) = ~7 KB per chunk
+        # - ChromaDB overhead: ~20% of data size
+        # - Python objects overhead: ~30% of data size
+        
+        bytes_per_chunk = 7 * 1024  # 7 KB
+        total_data_mb = (total_chunks * bytes_per_chunk) / (1024 * 1024)
+        estimated_memory_mb = total_data_mb * 1.5  # 50% overhead for ChromaDB and Python
+        
+        return {
+            'estimated_time_minutes': estimated_time_minutes,
+            'estimated_memory_mb': estimated_memory_mb,
+            'estimated_chunks': int(total_chunks),
+            'estimated_total_duration_hours': total_duration_seconds / 3600
+        }
+    
+    def add_channel_to_vectorstore(
+        self,
+        channel_handle: str,
+        youtube_api_key: str,
+        season_start: str = "2025-07-01",
+        season_end: str = "2026-06-30",
+        chunk_size_seconds: Optional[int] = None,
+        skip_existing: bool = True,
+        estimate_only: bool = False
+    ) -> Dict[str, any]:
+        """
+        Pipeline to fetch all videos from a YouTube channel published during NBA season and add to vectorstore.
+        
+        Args:
+            channel_handle: YouTube channel handle (e.g., '@LockedOnFantasyBasketball')
+            youtube_api_key: YouTube Data API v3 key
+            season_start: Start date of NBA season (YYYY-MM-DD format, default: 2025-07-01)
+            season_end: End date of NBA season (YYYY-MM-DD format, default: 2026-06-30)
+            chunk_size_seconds: Size of transcript chunks in seconds (uses instance default if not provided)
+            skip_existing: Skip videos already in vectorstore
+            estimate_only: If True, only return estimates without processing videos
+            
+        Returns:
+            Dictionary with results including:
+            - videos_found: Number of videos found
+            - videos_added: Number of videos added
+            - videos_skipped: Number of videos skipped
+            - videos_failed: Number of videos that failed
+            - chunks_added: Total chunks added
+            - estimated_time_minutes: Estimated processing time
+            - estimated_memory_mb: Estimated memory usage
+        """
+        from datetime import datetime, timedelta
+        
+        chunk_size = chunk_size_seconds if chunk_size_seconds is not None else self.chunk_size_seconds
+        
+        print(f"Fetching videos from channel: {channel_handle}")
+        print(f"Season range: {season_start} to {season_end}")
+        
+        # Fetch videos from channel
+        videos = self.fetch_channel_videos(
+            channel_handle=channel_handle,
+            youtube_api_key=youtube_api_key,
+            published_after=season_start,
+            published_before=season_end
+        )
+        
+        print(f"Found {len(videos)} videos in season range")
+        
+        if estimate_only:
+            return self._estimate_processing_requirements(videos, chunk_size)
+        
+        # Get existing resource IDs if skipping
+        existing_resource_ids = set()
+        if skip_existing:
+            existing_resource_ids = self.get_existing_resource_ids()
+        
+        results = {
+            'videos_found': len(videos),
+            'videos_added': 0,
+            'videos_skipped': 0,
+            'videos_failed': 0,
+            'chunks_added': 0,
+            'estimated_time_minutes': 0,
+            'estimated_memory_mb': 0
+        }
+        
+        # Calculate estimates
+        estimates = self._estimate_processing_requirements(videos, chunk_size)
+        results['estimated_time_minutes'] = estimates['estimated_time_minutes']
+        results['estimated_memory_mb'] = estimates['estimated_memory_mb']
+        
+        print(f"\nEstimated processing time: {results['estimated_time_minutes']:.1f} minutes")
+        print(f"Estimated memory usage: {results['estimated_memory_mb']:.1f} MB")
+        print(f"\nProcessing videos...")
+        
+        # Process each video
+        for i, video in enumerate(videos, 1):
+            video_id = video['id']
+            video_url = video['url']
+            video_title = video['title']
+            published_at = video['publishedAt']
+            
+            # Parse publish date
+            publish_date = datetime.fromisoformat(published_at.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+            
+            print(f"\n[{i}/{len(videos)}] Processing: {video_title}")
+            
+            # Check if already exists
+            if skip_existing and video_id in existing_resource_ids:
+                print(f"  ⏭ Skipping (already in vectorstore)")
+                results['videos_skipped'] += 1
+                continue
+            
+            try:
+                chunks_added = self.add_resource_to_vectorstore(
+                    url=video_url,
+                    source_type='youtube',
+                    title=video_title,
+                    upload_date=publish_date,
+                    publish_date=publish_date,
+                    resource_id=video_id,
+                    chunk_size_seconds=chunk_size
+                )
+                
+                if chunks_added > 0:
+                    results['videos_added'] += 1
+                    results['chunks_added'] += chunks_added
+                    existing_resource_ids.add(video_id)
+                    print(f"  ✓ Added {chunks_added} chunks")
+                else:
+                    results['videos_failed'] += 1
+                    print(f"  ✗ Failed (no transcript found)")
+            except Exception as e:
+                results['videos_failed'] += 1
+                print(f"  ✗ Failed: {e}")
+        
+        print(f"\n{'='*60}")
+        print(f"Processing complete!")
+        print(f"  Videos found: {results['videos_found']}")
+        print(f"  Videos added: {results['videos_added']}")
+        print(f"  Videos skipped: {results['videos_skipped']}")
+        print(f"  Videos failed: {results['videos_failed']}")
+        print(f"  Total chunks added: {results['chunks_added']}")
+        print(f"  Estimated time: {results['estimated_time_minutes']:.1f} minutes")
+        print(f"  Estimated memory: {results['estimated_memory_mb']:.1f} MB")
+        print(f"{'='*60}")
+        
+        return results
+
+
 class ArticleVectorManager(BaseVectorManager):
     """
     Manager for ingesting articles into a vectorstore.
@@ -1098,3 +1477,130 @@ class ArticleVectorManager(BaseVectorManager):
             vectordata_yaml=vectordata_yaml,
             skip_existing=skip_existing
         )
+
+
+# Backward compatibility functions - these create a YoutubeChannelVectorManager instance
+# and delegate to the class methods. Prefer using YoutubeChannelVectorManager directly.
+
+def fetch_youtube_channel_videos(
+    channel_handle: str,
+    youtube_api_key: str,
+    published_after: Optional[str] = None,
+    published_before: Optional[str] = None,
+    max_results: Optional[int] = None
+) -> List[Dict[str, any]]:
+    """
+    Fetch all videos from a YouTube channel using YouTube Data API v3.
+    
+    This is a backward compatibility wrapper. For new code, prefer using
+    YoutubeChannelVectorManager.fetch_channel_videos() directly.
+    
+    Args:
+        channel_handle: YouTube channel handle (e.g., '@LockedOnFantasyBasketball' or 'UC...')
+        youtube_api_key: YouTube Data API v3 key
+        published_after: Filter videos published after this date (ISO 8601 format: YYYY-MM-DD)
+        published_before: Filter videos published before this date (ISO 8601 format: YYYY-MM-DD)
+        max_results: Maximum number of videos to fetch (None for all)
+        
+    Returns:
+        List of dictionaries with video information (id, title, url, publishedAt, etc.)
+    """
+    # Create a minimal manager instance just for fetching videos
+    # We don't need vectorstore or embeddings for this operation
+    manager = YoutubeChannelVectorManager(
+        vectorstore=None,
+        embeddings=None,  # Not needed for fetching videos
+        persist_directory="",  # Not needed for fetching videos
+        chunk_size_seconds=30
+    )
+    return manager.fetch_channel_videos(
+        channel_handle=channel_handle,
+        youtube_api_key=youtube_api_key,
+        published_after=published_after,
+        published_before=published_before,
+        max_results=max_results
+    )
+
+
+def add_youtube_channel_to_vectorstore(
+    channel_handle: str,
+    youtube_api_key: str,
+    youtube_manager: YoutubeVectorManager,
+    season_start: str = "2025-07-01",
+    season_end: str = "2026-06-30",
+    chunk_size_seconds: int = 30,
+    skip_existing: bool = True,
+    estimate_only: bool = False
+) -> Dict[str, any]:
+    """
+    Pipeline to fetch all videos from a YouTube channel published during NBA season and add to vectorstore.
+    
+    This is a backward compatibility wrapper. For new code, prefer using
+    YoutubeChannelVectorManager.add_channel_to_vectorstore() directly.
+    
+    Args:
+        channel_handle: YouTube channel handle (e.g., '@LockedOnFantasyBasketball')
+        youtube_api_key: YouTube Data API v3 key
+        youtube_manager: YoutubeVectorManager instance (will be converted to YoutubeChannelVectorManager)
+        season_start: Start date of NBA season (YYYY-MM-DD format, default: 2025-07-01)
+        season_end: End date of NBA season (YYYY-MM-DD format, default: 2026-06-30)
+        chunk_size_seconds: Size of transcript chunks in seconds
+        skip_existing: Skip videos already in vectorstore
+        estimate_only: If True, only return estimates without processing videos
+        
+    Returns:
+        Dictionary with results including:
+        - videos_found: Number of videos found
+        - videos_added: Number of videos added
+        - videos_skipped: Number of videos skipped
+        - videos_failed: Number of videos that failed
+        - chunks_added: Total chunks added
+        - estimated_time_minutes: Estimated processing time
+        - estimated_memory_mb: Estimated memory usage
+    """
+    # Convert YoutubeVectorManager to YoutubeChannelVectorManager
+    # by creating a new instance with the same configuration
+    channel_manager = YoutubeChannelVectorManager(
+        vectorstore=youtube_manager.vectorstore,
+        embeddings=youtube_manager.embeddings,
+        persist_directory=youtube_manager.persist_directory,
+        vectordata_yaml=youtube_manager.vectordata_yaml,
+        chunk_size_seconds=chunk_size_seconds
+    )
+    
+    return channel_manager.add_channel_to_vectorstore(
+        channel_handle=channel_handle,
+        youtube_api_key=youtube_api_key,
+        season_start=season_start,
+        season_end=season_end,
+        chunk_size_seconds=chunk_size_seconds,
+        skip_existing=skip_existing,
+        estimate_only=estimate_only
+    )
+
+
+def _estimate_processing_requirements(
+    videos: List[Dict[str, any]],
+    chunk_size_seconds: int = 30
+) -> Dict[str, float]:
+    """
+    Estimate time and memory requirements for processing YouTube videos.
+    
+    This is a backward compatibility wrapper. For new code, prefer using
+    YoutubeChannelVectorManager._estimate_processing_requirements() directly.
+    
+    Args:
+        videos: List of video dictionaries with duration and other info
+        chunk_size_seconds: Size of transcript chunks in seconds
+        
+    Returns:
+        Dictionary with estimated_time_minutes and estimated_memory_mb
+    """
+    # Create a minimal manager instance just for estimation
+    manager = YoutubeChannelVectorManager(
+        vectorstore=None,
+        embeddings=None,  # Not needed for estimation
+        persist_directory="",  # Not needed for estimation
+        chunk_size_seconds=chunk_size_seconds
+    )
+    return manager._estimate_processing_requirements(videos, chunk_size_seconds)

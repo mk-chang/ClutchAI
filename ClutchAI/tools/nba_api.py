@@ -32,13 +32,15 @@ class nbaAPITool(ClutchAITool):
     Provides tools for accessing NBA.com stats and live data.
     """
     
-    def __init__(self, timeout: int = 30):
+    def __init__(self, timeout: int = 30, debug: bool = False):
         """
         Initialize nbaAPITool.
         
         Args:
             timeout: Request timeout in seconds (default: 30)
+            debug: Enable debug logging (default: False)
         """
+        super().__init__(debug=debug)
         self.timeout = timeout
     
     def _format_response(self, data) -> str:
@@ -321,7 +323,7 @@ class nbaAPITool(ClutchAITool):
         Returns:
             List of all LangChain tool instances
         """
-        return [
+        tools = [
             # Static Data Tools
             self.create_get_all_players_tool(),
             self.create_find_players_by_name_tool(),
@@ -343,4 +345,5 @@ class nbaAPITool(ClutchAITool):
             self.create_get_play_by_play_tool(),
             self.create_find_games_tool(),
         ]
+        return tools
 

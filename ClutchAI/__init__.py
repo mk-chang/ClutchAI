@@ -5,7 +5,7 @@ from .agent import ClutchAIAgent
 
 # Optional imports - only import if needed
 try:
-    from .rag.vectorstore import VectorstoreManager
+    from .rag.vector_manager import VectorstoreManager
     from .rag.data_class import YouTubeVideo
     __all__ = ['ClutchAIAgent', 'VectorstoreManager', 'YouTubeVideo']
 except ImportError:

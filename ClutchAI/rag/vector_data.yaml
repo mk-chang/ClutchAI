@@ -14,5 +14,13 @@ article:
     publish_date: 2025-11-10
     force_update: false
     remove: false
-  
+tables:
+  - title: Basketball Monster
+    url: https://www.rotowire.com/basketball/advice/
+    resource_id: web000001
+    upload_date: 2025-11-10
+    publish_date: 2025-11-10
+    force_update: false
+    remove: false
+
 

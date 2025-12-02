@@ -119,16 +119,39 @@ graph TB
     style Output stroke:#E91E63,stroke-width:2px
 ```
 
+
+### VectorDB Data Pipeline
+
+During agent initialization, the Vector Manager checks the local ChromaDB, reads `vector_data.yaml`, and updates the vectorstore with any new resources.
+
+```mermaid
+graph TD
+    START[Agent Initialization] --> VM
+    
+    subgraph VM["Vector Manager"]
+        direction TB
+        CHECK[Check Local ChromaDB]
+        YAML[Read vector_data.yaml]
+        UPDATE[Update Vectorstore<br/>Add New Resources]
+        CHECK --> YAML
+        YAML --> UPDATE
+    end
+    
+    VM --> READY[Agent Ready]
+    
+    style START stroke:#4A90E2,stroke-width:2px
+    style VM stroke:#FF9500,stroke-width:2px
+    style READY stroke:#00BCD4,stroke-width:2px
+```
+
 ### Available Agent Tools
 
 | Name | Data Type | Implementation |
 |------|-----------|----------------|
 | Yahoo Fantasy Tools (45) | Live data | API Tool |
-| NBA API - Player/Team Stats | Live data | API Tool |
-| NBA API - Game Data | Live data | API Tool |
-| NBA API - Static Data | Static data | API Tool |
-| YouTube Transcripts | Static data | VectorDB |
-| Articles | Static data | VectorDB |
+| NBA API (16) | Live data | API Tool |
+| LockedOn Podcast Transcripts | Static data | RAG |
+| Articles | Static data | RAG |
 
 **Tool Categories:**
 - **Yahoo Fantasy Tools**: League info, standings, rosters, matchups, player stats, transactions
@@ -150,5 +173,5 @@ graph TB
 4. Enter your credentials in the app sidebar
 5. Start asking questions about your fantasy league!
 
-The app will automatically initialize the vectorstore and load resources from `ClutchAI/rag/vectordata.yaml` on first run.
+The app will automatically initialize the vectorstore and load resources from `ClutchAI/rag/vector_data.yaml` on first run.
  
