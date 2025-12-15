@@ -177,7 +177,7 @@ pytest tests/test_fantasy_news.py::TestFantasyNewsTool::test_init
 2. **Verify imports work**:
    ```bash
    conda activate ClutchAI
-   python -c "from ClutchAI.tools.fantasy_news import FantasyNewsTool; print('OK')"
+   python -c "from agents.tools.fantasy_news import FantasyNewsTool; print('OK')"
    ```
 
 ### Python interpreter path issues
@@ -227,7 +227,7 @@ pytest
 pytest tests/test_fantasy_news.py -v
 
 # Run with coverage
-pytest --cov=ClutchAI --cov-report=html
+pytest --cov=agents --cov-report=html
 
 # Deactivate environment
 conda deactivate

@@ -91,4 +91,3 @@ class YouTubeVideo:
         allowed_fields = ['title', 'url', 'id', 'added_at', 'description', 'upload_date', 'publish_date', 'force_update']
         filtered_data = {k: v for k, v in data.items() if k in allowed_fields}
         return cls(**filtered_data)
-

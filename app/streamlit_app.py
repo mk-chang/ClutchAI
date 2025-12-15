@@ -22,27 +22,27 @@ DEBUG_MODE = (
 
 # Logging will be set up after imports
 
-# Add project root to Python path so we can import ClutchAI
+# Add project root to Python path so we can import agents
 current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.resolve()
 
-# Verify project root by checking for ClutchAI directory
-if not (project_root / "ClutchAI").exists():
+# Verify project root by checking for agents directory
+if not (project_root / "agents").exists():
     # Try current working directory as fallback
     cwd_root = Path.cwd().resolve()
-    if (cwd_root / "ClutchAI").exists():
+    if (cwd_root / "agents").exists():
         project_root = cwd_root
     else:
         raise FileNotFoundError(
-            f"ClutchAI directory not found. Expected at: {project_root / 'ClutchAI'}"
+            f"agents directory not found. Expected at: {project_root / 'agents'}"
         )
 
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import streamlit as st
-from ClutchAI.logger import setup_logging, get_logger
-from ClutchAI.agent import ClutchAIAgent
+from agents.logger import setup_logging, get_logger
+from agents.agent import ClutchAIAgent
 
 # Setup logging early
 setup_logging(debug=DEBUG_MODE)

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, Mock
 from typing import List, Optional
 
 # Add project root to Python path for imports
-# This ensures tests can import ClutchAI modules when run from IDE or different directories
+# This ensures tests can import agents modules when run from IDE or different directories
 project_root = Path(__file__).parent.parent.resolve()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
@@ -121,14 +121,27 @@ def save_test_output(test_output_dir, request):
         result = tool.invoke(...)
         save_test_output("tool_name", result)
     
-    Outputs are saved to tests/test_outputs/{test_name}_{tool_name}.txt
+    Outputs are saved to tests/test_outputs/{test_file_name}/{test_function_name}_{tool_name}.txt
+    Each test file gets its own folder for better organization.
     """
     def _save_output(tool_name: str, output: str):
-        """Save output to file."""
-        test_name = request.node.name
-        output_file = test_output_dir / f"{test_name}_{tool_name}.txt"
+        """Save output to file in test file-specific folder."""
+        # Get the test file name (without .py extension)
+        test_file_path = Path(request.node.fspath)
+        test_file_name = test_file_path.stem  # e.g., "test_dynasty_ranking" or "test_yahoo_api_integration"
+        
+        # Get the test function name
+        test_function_name = request.node.name
+        
+        # Create a folder for this test file
+        test_file_folder = test_output_dir / test_file_name
+        test_file_folder.mkdir(exist_ok=True)
+        
+        # Save file inside the test file folder with test function name and tool name
+        output_file = test_file_folder / f"{test_function_name}_{tool_name}.txt"
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(f"Test: {test_name}\n")
+            f.write(f"Test File: {test_file_name}\n")
+            f.write(f"Test Function: {test_function_name}\n")
             f.write(f"Tool: {tool_name}\n")
             f.write("=" * 80 + "\n\n")
             f.write(output)

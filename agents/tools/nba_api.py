@@ -17,6 +17,7 @@ from nba_api.stats.endpoints import (
     scoreboardv2,
     boxscoretraditionalv2,
     playbyplayv2,
+    playbyplay,
     commonplayerinfo,
     commonteamroster,
     leaguegamefinder,
@@ -163,12 +164,27 @@ class nbaAPITool(ClutchAITool):
     
     def create_get_player_game_log_tool(self):
         """Create a tool for retrieving player game log."""
-        @tool("get_player_game_log", description="Get game log for an NBA player by player_id and season (e.g., '2023-24'). Use find_nba_players_by_name first to get player_id.")
+        @tool("get_player_game_log", description="Get game log for an NBA player by player_id and season (e.g., '2023-24'). Use find_nba_players_by_name first to get player_id. Season format: 'YYYY-YY' (e.g., '2023-24').")
         def get_player_game_log(player_id: str, season: str = "2023-24") -> str:
-            """Get player game log."""
+            """Get player game log.
+            
+            Args:
+                player_id: The unique identifier for the player (e.g., '2544' for LeBron James)
+                season: The NBA season in format 'YYYY-YY' (e.g., '2023-24', '2022-23')
+            """
             try:
                 data = playergamelog.PlayerGameLog(player_id=player_id, season=season, timeout=self.timeout)
-                df = data.get_data_frame()
+                # PlayerGameLog.get_data_frames() may return a list or dict of dataframes
+                dataframes = data.get_data_frames()
+                # Handle both list and dict returns
+                if isinstance(dataframes, dict):
+                    df = list(dataframes.values())[0] if dataframes else None
+                elif isinstance(dataframes, list):
+                    df = dataframes[0] if dataframes and len(dataframes) > 0 else None
+                else:
+                    df = None
+                if df is None:
+                    return f"Failed to fetch game log: No data available"
                 return f'Game log for player_id {player_id} in season {season}: {json.dumps(df.to_dict("records"), default=str, indent=2)}'
             except Exception as e:
                 return f"Failed to fetch game log: {e}"
@@ -221,12 +237,27 @@ class nbaAPITool(ClutchAITool):
     
     def create_get_team_game_log_tool(self):
         """Create a tool for retrieving team game log."""
-        @tool("get_team_game_log", description="Get game log for an NBA team by team_id and season (e.g., '2023-24'). Use find_nba_team_by_name first to get team_id.")
+        @tool("get_team_game_log", description="Get game log for an NBA team by team_id and season (e.g., '2023-24'). Use find_nba_team_by_name first to get team_id. Season format: 'YYYY-YY' (e.g., '2023-24').")
         def get_team_game_log(team_id: str, season: str = "2023-24") -> str:
-            """Get team game log."""
+            """Get team game log.
+            
+            Args:
+                team_id: The unique identifier for the team (e.g., '1610612747' for Lakers)
+                season: The NBA season in format 'YYYY-YY' (e.g., '2023-24', '2022-23')
+            """
             try:
                 data = teamgamelog.TeamGameLog(team_id=team_id, season=season, timeout=self.timeout)
-                df = data.get_data_frame()
+                # TeamGameLog.get_data_frames() may return a list or dict of dataframes
+                dataframes = data.get_data_frames()
+                # Handle both list and dict returns
+                if isinstance(dataframes, dict):
+                    df = list(dataframes.values())[0] if dataframes else None
+                elif isinstance(dataframes, list):
+                    df = dataframes[0] if dataframes and len(dataframes) > 0 else None
+                else:
+                    df = None
+                if df is None:
+                    return f"Failed to fetch team game log: No data available"
                 return f'Game log for team_id {team_id} in season {season}: {json.dumps(df.to_dict("records"), default=str, indent=2)}'
             except Exception as e:
                 return f"Failed to fetch team game log: {e}"
@@ -278,10 +309,53 @@ class nbaAPITool(ClutchAITool):
         def get_nba_play_by_play(game_id: str) -> str:
             """Get play-by-play data for a game."""
             try:
-                data = playbyplayv2.PlayByPlayV2(game_id=game_id, timeout=self.timeout)
-                return f'Play-by-play for game_id {game_id}: {self._format_response(data.get_dict())}'
+                # Try PlayByPlay first (as shown in the official nba_api examples)
+                # This matches the approach in: https://github.com/swar/nba_api/blob/master/docs/examples/PlayByPlay.ipynb
+                try:
+                    data = playbyplay.PlayByPlay(game_id=game_id, timeout=self.timeout)
+                    # Use get_normalized_dict() as shown in the notebook example
+                    normalized_dict = data.get_normalized_dict()
+                    if normalized_dict and 'PlayByPlay' in normalized_dict:
+                        return f'Play-by-play for game_id {game_id}: {self._format_response(normalized_dict["PlayByPlay"])}'
+                    # Fallback to get_dict if normalized_dict doesn't have expected structure
+                    result_dict = data.get_dict()
+                    return f'Play-by-play for game_id {game_id}: {self._format_response(result_dict)}'
+                except (KeyError, AttributeError, IndexError) as e:
+                    # Fallback to PlayByPlayV2 if PlayByPlay fails
+                    data = playbyplayv2.PlayByPlayV2(game_id=game_id, timeout=self.timeout)
+                    
+                    # Try get_normalized_dict() first (if available)
+                    try:
+                        normalized_dict = data.get_normalized_dict()
+                        if normalized_dict and 'PlayByPlay' in normalized_dict:
+                            return f'Play-by-play for game_id {game_id}: {self._format_response(normalized_dict["PlayByPlay"])}'
+                    except (AttributeError, KeyError):
+                        pass
+                    
+                    # Try get_data_frames
+                    try:
+                        dataframes = data.get_data_frames()
+                        if dataframes and len(dataframes) > 0:
+                            return f'Play-by-play for game_id {game_id}: {self._format_response(dataframes[0])}'
+                    except (KeyError, AttributeError, IndexError):
+                        pass
+                    
+                    # Fallback to get_dict
+                    try:
+                        result_dict = data.get_dict()
+                        return f'Play-by-play for game_id {game_id}: {self._format_response(result_dict)}'
+                    except KeyError:
+                        # Try get_json as last resort
+                        try:
+                            result_json = data.get_json()
+                            return f'Play-by-play for game_id {game_id}: {result_json}'
+                        except Exception:
+                            raise
+                        
+            except KeyError as e:
+                return f"Failed to fetch play-by-play for game_id {game_id}: Missing field {e}. This may indicate the game_id is invalid, the game doesn't have play-by-play data available, or the API response structure has changed. Try using get_nba_scoreboard to get a valid game_id."
             except Exception as e:
-                return f"Failed to fetch play-by-play: {e}"
+                return f"Failed to fetch play-by-play for game_id {game_id}: {e}. Make sure to use get_nba_scoreboard first to get a valid game_id."
         return get_nba_play_by_play
     
     def create_find_games_tool(self):
@@ -310,7 +384,24 @@ class nbaAPITool(ClutchAITool):
                     params['date_to_nullable'] = date_to
                 
                 data = leaguegamefinder.LeagueGameFinder(**params, timeout=self.timeout)
-                df = data.get_data_frame()
+                # LeagueGameFinder.get_data_frames() returns a list of dataframes
+                dataframes = data.get_data_frames()
+                
+                # Safely extract the dataframe
+                df = None
+                try:
+                    if isinstance(dataframes, list):
+                        df = dataframes[0] if dataframes and len(dataframes) > 0 else None
+                    elif isinstance(dataframes, dict):
+                        # Fallback for dict return
+                        df = list(dataframes.values())[0] if dataframes else None
+                    else:
+                        return f"Failed to find games: Unexpected data type from get_data_frames(): {type(dataframes)}"
+                except (IndexError, KeyError, AttributeError) as e:
+                    return f"Failed to find games: Error accessing dataframe - {type(e).__name__}: {e}"
+                
+                if df is None:
+                    return f"Failed to find games: No data available"
                 return f'Found games: {json.dumps(df.to_dict("records"), default=str, indent=2)}'
             except Exception as e:
                 return f"Failed to find games: {e}"

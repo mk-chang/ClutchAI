@@ -9,9 +9,21 @@ Run with: pytest -m integration tests/test_fantasy_news_integration.py
 """
 
 import os
+import yaml
+from pathlib import Path
 import pytest
 
-from ClutchAI.tools.fantasy_news import FantasyNewsTool
+from agents.tools.fantasy_news import FantasyNewsTool
+
+
+def _load_test_config():
+    """Load test configuration from test_config.yaml file."""
+    config_path = Path(__file__).parent / 'test_config.yaml'
+    if config_path.exists():
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f) or {}
+        return config.get('fantasy_news', {})
+    return {}
 
 
 # Skip all integration tests if FIRECRAWL_API_KEY is not set
@@ -24,6 +36,24 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.integration
 class TestFantasyNewsToolIntegration:
     """Integration tests for FantasyNewsTool with real API calls."""
+    
+    # Load test configuration from YAML file
+    _test_config = _load_test_config()
+    
+    # Test URL for scraping
+    # Configured in tests/test_config.yaml
+    TEST_SCRAPE_URL = _test_config.get('scrape_url', 'https://www.rotowire.com/basketball/advice/')
+    
+    # Test URLs for mapping
+    # Configured in tests/test_config.yaml
+    TEST_MAP_URLS = _test_config.get('map_urls', [
+        'https://sports.yahoo.com/nba/news/',
+        'https://www.nba.com/news'
+    ])
+    
+    # Test search term
+    # Configured in tests/test_config.yaml
+    TEST_SEARCH_TERM = _test_config.get('search_term', 'Kevin Durant')
     
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -43,7 +73,7 @@ class TestFantasyNewsToolIntegration:
         scrape_tool = next(t for t in self.tools if t.name == 'scrape_url')
         
         # Test with RotoWire URL
-        test_url = "https://www.rotowire.com/basketball/advice/"
+        test_url = self.TEST_SCRAPE_URL
         
         # Call real Firecrawl v2 API
         result = scrape_tool.invoke({"url": test_url})
@@ -68,13 +98,10 @@ class TestFantasyNewsToolIntegration:
         map_tool = next(t for t in self.tools if t.name == 'map_url')
         
         # URLs to test
-        test_urls = [
-            "https://sports.yahoo.com/nba/news/",
-            "https://www.nba.com/news"
-        ]
+        test_urls = self.TEST_MAP_URLS
         
         # Call real API with search term and limit to 3 links for each URL
-        search_term = "Kevin Durant"
+        search_term = self.TEST_SEARCH_TERM
         all_results = []
         
         for url in test_urls:
@@ -87,7 +114,7 @@ class TestFantasyNewsToolIntegration:
             # Should contain links or metadata filtered by search term
             assert len(result) > 50  # Should have some content
             # The result should include the search term in the output
-            assert search_term.lower() in result.lower() or "kevin" in result.lower() or "durant" in result.lower()
+            assert search_term.lower() in result.lower()
         
         # Save combined output to file for easy viewing
         combined_result = "\n".join(all_results)

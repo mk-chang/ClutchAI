@@ -1,0 +1,58 @@
+yahoo_api:
+  # Test team_id (KATmandu Climbers from league 58930)
+  team_id: "6"
+  
+  # Test week
+  week: "1"
+  
+  # Test player_key (example player key format: game_id.p.player_id)
+  # Using player_key from test outputs: 466.p.5471 (Myles Turner) - appears in roster and draft results
+  player_key: "466.p.5471"
+  
+  # Points league ID for testing get_team_stats_by_week (only works in points leagues)
+  points_league_id: "229522"
+
+nba_api:
+  # Test player name
+  player_name: "LeBron James"
+  
+  # Test team name
+  team_name: "Lakers"
+  
+  # Test player_id (LeBron James)
+  player_id: "2544"
+  
+  # Test team_id (Lakers)
+  team_id: "1610612747"
+  
+  # Test season
+  season: "2023-24"
+  
+  # Test game_id (from a completed game that has play-by-play data available)
+  # Format: 00YYMMDD0TEAM_ID
+  # Using game_id from nba_api example notebook: 0021800854 (Pacers vs Bucks game)
+  # Reference: https://github.com/swar/nba_api/blob/master/docs/examples/PlayByPlay.ipynb
+  game_id: "0021800854"
+
+fantasy_news:
+  # Test URL for scraping
+  scrape_url: "https://www.rotowire.com/basketball/advice/"
+  
+  # Test URLs for mapping
+  map_urls:
+    - "https://sports.yahoo.com/nba/news/"
+    - "https://www.nba.com/news"
+  
+  # Test search term
+  search_term: "Kevin Durant"
+
+dynasty_ranking:
+  # Test player name
+  player_name: "Luka Doncic"
+  
+  # Test top N value
+  top_n: "10"
+  
+  # Test position
+  position: "PG"
+

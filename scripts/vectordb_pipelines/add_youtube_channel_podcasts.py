@@ -2,7 +2,7 @@
 Example script to add YouTube channel podcasts to vectorstore.
 
 This script demonstrates how to use the pipeline to fetch all videos from
-a YouTube channel published during the NBA season and add them to the vectorstore.
+a YouTube channel published during the NBA season and add them to the PostgreSQL vectorstore.
 
 Usage:
     python scripts/add_youtube_channel_podcasts.py
@@ -12,17 +12,27 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-from ClutchAI.rag.vector_manager import VectorstoreManager
+from data.cloud_sql.connection import PostgresConnection
+from data.cloud_sql.vector_managers import YoutubeChannelVectorManager
+from langchain_openai import OpenAIEmbeddings
 
 # Load environment variables
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
 def main():
-    # Initialize VectorstoreManager
-    vectorstore_manager = VectorstoreManager(
-        chroma_persist_directory=None,  # Uses default
-        openai_api_key=os.environ.get('OPENAI_API_KEY'),
+    # Initialize PostgreSQL connection
+    connection = PostgresConnection()
+    
+    # Initialize embeddings
+    embeddings = OpenAIEmbeddings(api_key=os.environ.get('OPENAI_API_KEY'))
+    
+    # Initialize YouTube channel manager
+    youtube_manager = YoutubeChannelVectorManager(
+        connection=connection,
+        embeddings=embeddings,
+        table_name="embeddings",
+        chunk_size_seconds=30,
     )
     
     # Channel to process
@@ -39,32 +49,9 @@ def main():
     print(f"Season: {season_start} to {season_end}")
     print("=" * 60)
     
-    # First, get estimates only
-    print("\n📊 Getting estimates...")
-    estimates = vectorstore_manager.add_youtube_channel_podcasts(
-        channel_handle=channel_handle,
-        youtube_api_key=os.environ.get('YOUTUBE_API_KEY'),
-        season_start=season_start,
-        season_end=season_end,
-        chunk_size_seconds=30,
-        estimate_only=True
-    )
-    
-    print(f"\nEstimated videos: {estimates.get('videos_found', 0)}")
-    print(f"Estimated chunks: {estimates.get('estimated_chunks', 0):,}")
-    print(f"Estimated time: {estimates.get('estimated_time_minutes', 0):.1f} minutes")
-    print(f"Estimated memory: {estimates.get('estimated_memory_mb', 0):.1f} MB")
-    print(f"Estimated total duration: {estimates.get('estimated_total_duration_hours', 0):.1f} hours")
-    
-    # Ask for confirmation
-    response = input("\nProceed with processing? (yes/no): ")
-    if response.lower() not in ['yes', 'y']:
-        print("Cancelled.")
-        return
-    
     # Process videos
     print("\n🚀 Processing videos...")
-    results = vectorstore_manager.add_youtube_channel_podcasts(
+    results = youtube_manager.add_channel_to_vectorstore(
         channel_handle=channel_handle,
         youtube_api_key=os.environ.get('YOUTUBE_API_KEY'),
         season_start=season_start,

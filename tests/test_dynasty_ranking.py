@@ -12,13 +12,23 @@ import pytest
 from pathlib import Path
 import yaml
 
-from ClutchAI.tools.dynasty_ranking import DynastyRankingTool
+from agents.tools.dynasty_ranking import DynastyRankingTool
+
+
+def _load_test_config():
+    """Load test configuration from test_config.yaml file."""
+    config_path = Path(__file__).parent / 'test_config.yaml'
+    if config_path.exists():
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f) or {}
+        return config.get('dynasty_ranking', {})
+    return {}
 
 
 @pytest.fixture
 def dynasty_rankings_url():
     """Load dynasty rankings URL from agent_config.yaml."""
-    config_path = Path(__file__).parent.parent / "ClutchAI" / "agent_config.yaml"
+    config_path = Path(__file__).parent.parent / "agents" / "agent_config.yaml"
     
     if config_path.exists():
         try:
@@ -49,6 +59,21 @@ class TestDynastyRankingToolIntegration:
     Run with: pytest -m integration tests/test_dynasty_ranking.py::TestDynastyRankingToolIntegration
     """
     
+    # Load test configuration from YAML file
+    _test_config = _load_test_config()
+    
+    # Test player name
+    # Configured in tests/test_config.yaml
+    TEST_PLAYER_NAME = _test_config.get('player_name', 'Luka Doncic')
+    
+    # Test top N value
+    # Configured in tests/test_config.yaml
+    TEST_TOP_N = int(_test_config.get('top_n', 10))
+    
+    # Test position
+    # Configured in tests/test_config.yaml
+    TEST_POSITION = _test_config.get('position', 'PG')
+    
     @pytest.fixture(autouse=True)
     def setup(self, dynasty_rankings_url):
         """Setup for integration tests using URL from config."""
@@ -68,7 +93,7 @@ class TestDynastyRankingToolIntegration:
         get_tool = next(t for t in self.tools if t.name == 'get_player_dynasty_rank')
         
         # Test with a well-known player
-        test_player = "Luka Doncic"
+        test_player = self.TEST_PLAYER_NAME
         
         # Call real tool
         result = get_tool.invoke({"player_name": test_player})
@@ -77,7 +102,7 @@ class TestDynastyRankingToolIntegration:
         output_file = save_test_output("get_player_dynasty_rank", result)
         
         # Verify the result
-        assert "Player dynasty ranking data" in result or "not found" in result.lower()
+        assert "Player dynasty ranking data" in result
         assert "Failed" not in result
         assert len(result) > 50  # Should have substantial content
     
@@ -111,8 +136,8 @@ class TestDynastyRankingToolIntegration:
         """
         get_top_tool = next(t for t in self.tools if t.name == 'get_top_dynasty_rankings')
         
-        # Test with top 10 players
-        top_n = 10
+        # Test with top N players
+        top_n = self.TEST_TOP_N
         
         # Call real tool
         result = get_top_tool.invoke({"top_n": top_n})
@@ -135,7 +160,7 @@ class TestDynastyRankingToolIntegration:
         get_by_position_tool = next(t for t in self.tools if t.name == 'get_dynasty_rankings_by_position')
         
         # Test with a common position
-        position = "PG"
+        position = self.TEST_POSITION
         
         # Call real tool
         result = get_by_position_tool.invoke({"position": position})
@@ -144,6 +169,6 @@ class TestDynastyRankingToolIntegration:
         output_file = save_test_output("get_dynasty_rankings_by_position", result)
         
         # Verify the result
-        assert "Found" in result or "No players found" in result
+        assert "Found" in result
         assert "Failed" not in result
         assert len(result) > 20  # Should have some content

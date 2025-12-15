@@ -126,7 +126,7 @@ class TestNewTool:
     """Tests for NewTool."""
     
     @patch.dict('os.environ', {'FIRECRAWL_API_KEY': 'test_key'})
-    @patch('ClutchAI.tools.base.Firecrawl')
+    @patch('agents.tools.base.Firecrawl')
     def test_init(self, mock_firecrawl_class):
         """Test NewTool initialization."""
         # Test implementation

@@ -1,7 +1,5 @@
 # Data Processing
 pandas
-numpy
-python-dateutil
 
 # Utilities
 python-dotenv
@@ -15,37 +13,30 @@ nba_api
 
 # LLM and AI
 openai
-tiktoken
-langchain
+langchain>=1.0.0
 langchain-openai
-langchainhub
 langchain_community
 langchain-text-splitters
+langgraph
 
-#Youtube Transcript
+# Youtube Transcript
 youtube_transcript_api
 google-api-python-client
 
-#Web Scraping
+# Web Scraping
 scrapy
 requests
-beautifulsoup4
-openpyxl
-selenium
-unstructured
 firecrawl-py
 
-# Vector Database - ChromaDB (Local)
-chromadb
+# Vector Database - PostgreSQL with pgvector (Google Cloud SQL)
+langchain-postgres
+psycopg2-binary
+cloud-sql-python-connector[pg8000,psycopg2]
 
-#Streamlit Web App
+# Streamlit Web App
 streamlit
 
 # Testing
 pytest
 pytest-cov
 pytest-mock
-
-# # Core Framework
-# fastapi
-# uvicorn

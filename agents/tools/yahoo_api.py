@@ -3,6 +3,7 @@ Yahoo Fantasy Sports tools for ClutchAI Agent.
 """
 
 import json
+from typing import Union
 from langchain_core.tools import tool
 from yfpy.query import YahooFantasySportsQuery
 from .base import ClutchAITool
@@ -30,11 +31,34 @@ class YahooFantasyTool(ClutchAITool):
         try:
             if hasattr(data, '__dict__'):
                 # Convert object to dict if possible
-                return json.dumps(data.__dict__, default=str, indent=2)
+                # Handle KeyError when accessing attributes that don't exist
+                try:
+                    return json.dumps(data.__dict__, default=str, indent=2)
+                except (KeyError, AttributeError, TypeError) as e:
+                    # If __dict__ access fails, try to serialize safely
+                    try:
+                        # Try to get a safe dict representation
+                        safe_dict = {}
+                        for key in dir(data):
+                            if not key.startswith('_'):
+                                try:
+                                    value = getattr(data, key)
+                                    if not callable(value):
+                                        safe_dict[key] = value
+                                except (KeyError, AttributeError):
+                                    pass
+                        return json.dumps(safe_dict, default=str, indent=2)
+                    except Exception:
+                        return str(data)
             elif isinstance(data, (dict, list)):
                 return json.dumps(data, default=str, indent=2)
             else:
                 return str(data)
+        except (KeyError, AttributeError, TypeError) as e:
+            try:
+                return str(data)
+            except Exception:
+                return f"Response data (unable to serialize: {type(e).__name__})"
         except Exception:
             return str(data)
     
@@ -496,15 +520,24 @@ class YahooFantasyTool(ClutchAITool):
     
     def create_get_team_stats_by_week_tool(self):
         """Create a tool for retrieving team stats by week."""
-        @tool("get_team_stats_by_week", description="Get team stats by team_id or team key and week. Can accept team_id (e.g., 6) or team key format: {game_id}.l.{league_id}.t.{team_id} (e.g., 466.l.58930.t.6). Use get_league_teams first to get valid team IDs or keys.")
-        def get_team_stats_by_week(team_key_or_id: str, week: int) -> str:
-            """Get team stats by week. Accepts team_id (numeric) or team key format: game_id.l.league_id.t.team_id"""
+        @tool("get_team_stats_by_week", description="Get team stats by team_id or team key and week. Can accept team_id (e.g., 6) or team key format: {game_id}.l.{league_id}.t.{team_id} (e.g., 466.l.58930.t.6). Week can be an integer or 'current' for the current week. Use get_league_teams first to get valid team IDs or keys.")
+        def get_team_stats_by_week(team_key_or_id: str, week: Union[int, str] = "current") -> str:
+            """Get team stats by week. Accepts team_id (numeric) or team key format: game_id.l.league_id.t.team_id. Week can be an integer or "current" for the current week."""
             try:
                 team_id = self._extract_team_id(team_key_or_id)
+                # Convert week to int if it's a numeric string, otherwise keep as-is (for "current")
+                if isinstance(week, str) and week.lower() != "current":
+                    week = int(week)
+                elif isinstance(week, str) and week.lower() == "current":
+                    week = "current"
                 data = self.query.get_team_stats_by_week(team_id, week)
                 return f'Team stats for team_id {team_id} in week {week}: {self._format_response(data)}'
+            except KeyError as e:
+                # Handle missing fields in API response (e.g., 'team_projected_points')
+                # This tool only works with points leagues, not categories leagues
+                return f"Failed to fetch team stats for team_id {team_key_or_id}: Missing field {e}. This tool only works with POINTS leagues, not categories leagues. The team_projected_points field is only available in points leagues. Make sure to use get_league_teams first to get valid team_id or team_key, and ensure you're using a points league."
             except Exception as e:
-                return f"Failed to fetch team stats for {team_key_or_id}: {e}. Make sure to use get_league_teams first to get valid team IDs or keys."
+                return f"Failed to fetch team stats for team_id {team_key_or_id}: {e}. Make sure to use get_league_teams first to get valid team_id or team_key."
         return get_team_stats_by_week
     
     def create_get_team_standings_tool(self):

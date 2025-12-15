@@ -22,7 +22,7 @@ dependencies = [
     "langchain_community",
     "langchain-text-splitters",
     "youtube_transcript_api",
-    "chromadb",
+    "langchain-google-cloud-sql-pg",
     "streamlit",
 ]
 
