@@ -171,3 +171,95 @@ class FirecrawlTool(ClutchAITool):
         """
         pass
 
+
+class RSSTool(ClutchAITool):
+    """
+    Base class for RSS feed-based tools.
+    
+    This class provides common functionality for tools that parse RSS feeds:
+    - RSS feed parsing using feedparser
+    - Common response formatting for RSS items
+    - Shared utility methods
+    
+    Subclasses should:
+    1. Call super().__init__(debug) in their __init__
+    2. Implement get_all_tools to return their specific tool instances
+    3. Use self._parse_feed(url) to parse RSS feeds
+    """
+    
+    def __init__(self, debug: bool = False):
+        """
+        Initialize RSSTool.
+        
+        Args:
+            debug: Enable debug logging (default: False)
+        """
+        super().__init__(debug=debug)
+        
+        try:
+            import feedparser
+            self.feedparser = feedparser
+        except ImportError:
+            raise ImportError(
+                "feedparser is not installed. Please install it with: pip install feedparser"
+            )
+    
+    def _parse_feed(self, url: str) -> dict:
+        """
+        Parse an RSS feed from a URL.
+        
+        Args:
+            url: URL of the RSS feed
+            
+        Returns:
+            Dictionary with parsed feed data including entries
+        """
+        try:
+            feed = self.feedparser.parse(url)
+            
+            if feed.bozo and feed.bozo_exception:
+                self.logger.warning(f"RSS feed parsing warning: {feed.bozo_exception}")
+            
+            return {
+                'title': feed.feed.get('title', ''),
+                'link': feed.feed.get('link', ''),
+                'description': feed.feed.get('description', ''),
+                'entries': [
+                    {
+                        'title': entry.get('title', ''),
+                        'link': entry.get('link', ''),
+                        'description': entry.get('description', ''),
+                        'published': entry.get('published', ''),
+                        'published_parsed': entry.get('published_parsed'),
+                        'guid': entry.get('id', entry.get('link', '')),
+                    }
+                    for entry in feed.entries
+                ],
+                'total_entries': len(feed.entries),
+            }
+        except Exception as e:
+            self.logger.error(f"Error parsing RSS feed {url}: {e}")
+            raise
+    
+    def _format_response(self, data) -> str:
+        """
+        Helper method to format RSS feed data as JSON string.
+        
+        Args:
+            data: Response data from RSS feed parsing
+            
+        Returns:
+            Formatted JSON string representation of the data
+        """
+        return super()._format_response(data)
+    
+    @abstractmethod
+    def get_all_tools(self) -> List[LangChainBaseTool]:
+        """
+        Get all available tools for this RSS-based tool class.
+        
+        Returns:
+            List of all LangChain tool instances
+        """
+        pass
+

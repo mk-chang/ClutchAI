@@ -2,7 +2,7 @@
 Simple script to update vectordb from YAML file.
 
 Usage:
-    python scripts/update_vectordb.py
+    python scripts/vectordb_pipelines/update_base_knowledge.py
 """
 
 import os
@@ -11,7 +11,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
+# From scripts/vectordb_pipelines/update_base_knowledge.py
+# .parent = scripts/vectordb_pipelines/
+# .parent.parent = scripts/
+# .parent.parent.parent = project root
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from data.cloud_sql.connection import PostgresConnection
@@ -24,7 +28,7 @@ load_dotenv(env_path)
 
 def main():
     # Path to YAML file
-    yaml_path = project_root / 'data' / 'vector_data.yaml'
+    yaml_path = project_root / 'data' / 'knowledge_base.yaml'
     
     if not yaml_path.exists():
         print(f"❌ YAML file not found: {yaml_path}")
@@ -42,7 +46,7 @@ def main():
     youtube_manager = YoutubeVectorManager(
         connection=connection,
         embeddings=embeddings,
-        table_name="embeddings",
+        table_name=None,  # Uses CLOUDSQL_VECTOR_TABLE from env
         vectordata_yaml=yaml_path,
     )
     youtube_results = youtube_manager.update_vectorstore_from_yaml(
@@ -55,7 +59,7 @@ def main():
     article_manager = ArticleVectorManager(
         connection=connection,
         embeddings=embeddings,
-        table_name="embeddings",
+        table_name=None,  # Uses CLOUDSQL_VECTOR_TABLE from env
         vectordata_yaml=yaml_path,
     )
     article_results = article_manager.update_vectorstore_from_yaml(
@@ -81,3 +85,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

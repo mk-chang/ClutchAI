@@ -1,0 +1,13 @@
+# Vector Manager Configuration
+# Configuration for YouTube channel processing pipelines
+
+youtube_channel:
+  # Maximum number of videos to process per run
+  # Set to null or omit to process all videos
+  max_videos: 10
+  
+  # Delay between videos in seconds (to avoid rate limiting)
+  delay_between_videos: 12.0
+  
+  # Note: chunk_size_seconds is defined in agents/rag/rag_config.yaml
+  # This script will use that value to maintain consistency across the codebase

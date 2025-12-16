@@ -56,3 +56,7 @@ dynasty_ranking:
   # Test position
   position: "PG"
 
+rotowire_rss:
+  # Test limit for news items
+  limit: "5"
+

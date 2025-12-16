@@ -49,7 +49,7 @@ class ArticleVectorManager(BaseVectorManager):
         self,
         connection: PostgresConnection,
         embeddings: OpenAIEmbeddings,
-        table_name: str = "embeddings",
+        table_name: Optional[str] = None,
         vectordata_yaml: Optional[Path] = None,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
@@ -82,11 +82,14 @@ class ArticleVectorManager(BaseVectorManager):
                 "firecrawl-py is not installed. Please install it with: pip install firecrawl-py"
             )
         
-        self.firecrawl_api_key = firecrawl_api_key or os.environ.get('FIRECRAWL_API_KEY')
-        if not self.firecrawl_api_key:
-            raise ValueError(
-                "Firecrawl API key is required. Set FIRECRAWL_API_KEY env var or pass firecrawl_api_key parameter."
-            )
+        # Get Firecrawl API key using base class utility
+        # Note: We store this as instance variable because it's needed to initialize the Firecrawl client
+        self.firecrawl_api_key = self.get_env_var(
+            env_var_name='FIRECRAWL_API_KEY',
+            param_value=firecrawl_api_key,
+            help_url='https://firecrawl.dev/app/api-keys',
+            description='Firecrawl API (for web scraping)'
+        )
         
         self.firecrawl_client = Firecrawl(api_key=self.firecrawl_api_key)
     
@@ -375,45 +378,6 @@ class ArticleVectorManager(BaseVectorManager):
         self._add_documents_to_vectorstore(docs)
         
         return len(docs)
-    
-    # Backward compatibility methods
-    def load_articles_from_yaml(self, vectordata_yaml: Optional[Path] = None) -> List[Tuple[str, YouTubeVideo]]:
-        """Backward compatibility wrapper for load_resources_from_yaml."""
-        return self.load_resources_from_yaml(vectordata_yaml)
-    
-    def load_article_content(
-        self,
-        url: str,
-        source_type: str = 'article',
-        title: Optional[str] = None,
-        upload_date: Optional[str] = None,
-        publish_date: Optional[str] = None
-    ) -> List[Document]:
-        """Backward compatibility wrapper for load_resource_content."""
-        return self.load_resource_content(
-            url,
-            source_type=source_type,
-            title=title,
-            upload_date=upload_date,
-            publish_date=publish_date
-        )
-    
-    def add_article_to_vectorstore(
-        self,
-        url: str,
-        source_type: str = 'article',
-        title: Optional[str] = None,
-        upload_date: Optional[str] = None,
-        publish_date: Optional[str] = None
-    ) -> int:
-        """Backward compatibility wrapper for add_resource_to_vectorstore."""
-        return self.add_resource_to_vectorstore(
-            url,
-            source_type=source_type,
-            title=title,
-            upload_date=upload_date,
-            publish_date=publish_date
-        )
     
     def update_vectorstore_from_yaml(
         self,

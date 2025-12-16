@@ -21,12 +21,14 @@ langgraph
 
 # Youtube Transcript
 youtube_transcript_api
+pytube
 google-api-python-client
 
 # Web Scraping
 scrapy
 requests
 firecrawl-py
+feedparser
 
 # Vector Database - PostgreSQL with pgvector (Google Cloud SQL)
 langchain-postgres

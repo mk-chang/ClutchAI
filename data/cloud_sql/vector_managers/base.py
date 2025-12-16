@@ -7,6 +7,8 @@ including database initialization, URL management, document deletion, and YAML-b
 
 from __future__ import annotations
 
+import os
+import hashlib
 from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple
 from abc import ABC, abstractmethod
@@ -16,7 +18,7 @@ from langchain_core.documents import Document
 from langchain_postgres import PGVector
 
 from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.schema import setup_schema, create_vector_table
+from data.cloud_sql.schema import setup_pgvector_extension, get_default_table_name
 from data.data_class import YouTubeVideo
 
 
@@ -32,7 +34,7 @@ class BaseVectorManager(ABC):
         self,
         connection: PostgresConnection,
         embeddings: OpenAIEmbeddings,
-        table_name: str = "embeddings",
+        table_name: Optional[str] = None,
         vectordata_yaml: Optional[Path] = None,
     ):
         """
@@ -41,48 +43,79 @@ class BaseVectorManager(ABC):
         Args:
             connection: PostgresConnection instance
             embeddings: OpenAIEmbeddings instance for document embedding
-            table_name: Name of the vector table in PostgreSQL
+            table_name: Name of the vector table in PostgreSQL (defaults to env var CLOUDSQL_VECTOR_TABLE)
             vectordata_yaml: Path to YAML file with resource data (optional, can be passed to methods)
         """
         self.connection = connection
         self.embeddings = embeddings
-        self.table_name = table_name
+        self.table_name = table_name or get_default_table_name()
         self.vectordata_yaml = vectordata_yaml
         
-        # Ensure schema is set up
-        setup_schema(connection, vector_size=1536)  # OpenAI embedding dimension
-        create_vector_table(connection, table_name=table_name, vector_dimension=1536)
+        # Ensure pgvector extension is set up (PGVector manages its own tables)
+        setup_pgvector_extension(connection)
         
         # Initialize PGVector
-        # Get connection parameters
-        project_id = connection.project_id
-        region = connection.region
-        instance = connection.instance
-        database = connection.vectordb
-        user = connection.user
-        password = connection.password
-        
-        from google.cloud.sql.connector import Connector
-        
-        connector = Connector()
-        
-        # Create a connection factory for PGVector
-        def get_connection():
-            """Create a psycopg2 connection using Cloud SQL Connector."""
-            return connector.connect(
-                f"{project_id}:{region}:{instance}",
-                "psycopg2",
-                user=user,
-                password=password,
-                db=database,
-            )
-        
+        # PGVector will create its own tables (langchain_pg_collection, langchain_pg_embedding)
+        # The collection_name parameter controls the collection name
         self.vectorstore = PGVector(
             embeddings=embeddings,
-            connection=get_connection,
-            collection_name=table_name,
+            connection=connection.get_engine(),
+            collection_name=self.table_name,  # This becomes the collection name in langchain_pg_collection
             use_jsonb=True,
         )
+    
+    @staticmethod
+    def get_env_var(
+        env_var_name: str,
+        param_value: Optional[str] = None,
+        help_url: Optional[str] = None,
+        description: Optional[str] = None
+    ) -> str:
+        """
+        Get environment variable value with helpful error messages.
+        
+        This method follows security best practices by:
+        - Not storing API keys longer than necessary
+        - Providing clear error messages when keys are missing
+        - Allowing parameter override for flexibility
+        
+        Args:
+            env_var_name: Name of the environment variable to check
+            param_value: Optional parameter value (takes precedence over env var)
+            help_url: Optional URL for getting the API key (for error messages)
+            description: Optional description of what the key is for (for error messages)
+            
+        Returns:
+            The API key value (from parameter or environment variable)
+            
+        Raises:
+            ValueError: If the API key is not found in parameter or environment variable
+        """
+        # Check parameter first (allows explicit passing)
+        if param_value:
+            return param_value
+        
+        # Check environment variable
+        env_value = os.environ.get(env_var_name)
+        if env_value:
+            return env_value
+        
+        # Build helpful error message
+        error_parts = [
+            f"API key is required for {description or 'this operation'}."
+        ]
+        
+        if description:
+            error_parts.append(f"Description: {description}")
+        
+        error_parts.append(f"Either provide the key as a parameter or set the {env_var_name} environment variable.")
+        
+        if help_url:
+            error_parts.append(f"Get API key from: {help_url}")
+        else:
+            error_parts.append(f"See env.example for reference.")
+        
+        raise ValueError(" ".join(error_parts))
     
     def normalize_url(self, url: str) -> str:
         """
@@ -324,11 +357,17 @@ class BaseVectorManager(ABC):
             publish_date = getattr(resource, 'publish_date', None) or upload_date
             force_update = resource.force_update
             
-            # Require resource_id for identification
+            # Auto-generate resource_id if missing (for articles, YouTube auto-extracts in dataclass)
             if not resource_id:
-                print(f"Warning: Skipping {title} - resource_id is required but not provided")
-                results['failed'] += 1
-                continue
+                if source_type == 'article':
+                    # Generate hash-based ID from URL for articles
+                    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+                    resource_id = f"art{url_hash}"
+                    print(f"Auto-generated resource_id for article: {resource_id}")
+                else:
+                    print(f"Warning: Skipping {title} - resource_id is required but not provided")
+                    results['failed'] += 1
+                    continue
             
             # Check if resource already exists in vectorstore
             resource_exists = resource_id in existing_resource_ids

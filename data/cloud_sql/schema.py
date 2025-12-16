@@ -4,18 +4,60 @@ Cloud SQL PostgreSQL Schema Management using SQLAlchemy
 Handles pgvector extension setup and vector table creation.
 """
 
+import os
 from typing import Optional
 from sqlalchemy import text
 from data.cloud_sql.connection import PostgresConnection
 
 
-def setup_schema(connection: PostgresConnection, vector_size: int = 1536) -> bool:
+def get_default_table_name() -> str:
     """
-    Set up pgvector extension and vector table.
+    Get the default vector table name from environment variables.
+    
+    Returns:
+        Vector table name to use
+        
+    Raises:
+        ValueError: If CLOUDSQL_VECTOR_TABLE is not set
+    """
+    # Check for explicit table name
+    table_name = os.environ.get('CLOUDSQL_VECTOR_TABLE')
+    if table_name:
+        return table_name
+    
+    # Require explicit table name - no fallback
+    raise ValueError(
+        "Vector table name is required. "
+        "Set CLOUDSQL_VECTOR_TABLE environment variable to specify the table name."
+    )
+
+
+def get_app_table_name() -> str:
+    """
+    Get the app table name from environment variables.
+    
+    Priority:
+    1. CLOUDSQL_APP_TABLE (if set)
+    2. "clutchai_app" (default fallback)
+    
+    Returns:
+        App table name to use
+    """
+    # Check for explicit table name
+    table_name = os.environ.get('CLOUDSQL_APP_TABLE')
+    if table_name:
+        return table_name
+    
+    # Default fallback
+    return "clutchai_app"
+
+
+def setup_pgvector_extension(connection: PostgresConnection) -> bool:
+    """
+    Set up pgvector extension only (PGVector manages its own tables).
     
     Args:
         connection: PostgresConnection instance
-        vector_size: Dimension of embedding vectors (default: 1536 for OpenAI)
         
     Returns:
         True if successful, False otherwise
@@ -27,10 +69,45 @@ def setup_schema(connection: PostgresConnection, vector_size: int = 1536) -> boo
             # Enable pgvector extension
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             conn.commit()
+        
+        print(f"✓ Set up pgvector extension")
+        return True
+    except Exception as e:
+        print(f"✗ Failed to setup pgvector extension: {e}")
+        print("  Note: Make sure pgvector extension is available in your PostgreSQL instance.")
+        print("  For Cloud SQL, enable the 'pgvector' flag when creating the instance.")
+        return False
+
+
+def setup_schema(connection: PostgresConnection, vector_size: int = 1536, table_name: Optional[str] = None) -> bool:
+    """
+    Set up pgvector extension and vector table.
+    
+    DEPRECATED: This function creates a custom table. Use setup_pgvector_extension() instead
+    and let PGVector manage its own tables via collection_name.
+    
+    Args:
+        connection: PostgresConnection instance
+        vector_size: Dimension of embedding vectors (default: 1536 for OpenAI)
+        table_name: Name of the vector table (defaults to env var CLOUDSQL_VECTOR_TABLE)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if table_name is None:
+        table_name = get_default_table_name()
+    
+    try:
+        engine = connection.get_engine()
+        
+        with engine.connect() as conn:
+            # Enable pgvector extension
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
             
             # Create vector table if it doesn't exist
             conn.execute(text(f"""
-                CREATE TABLE IF NOT EXISTS embeddings (
+                CREATE TABLE IF NOT EXISTS {table_name} (
                     id SERIAL PRIMARY KEY,
                     embedding vector({vector_size}),
                     document TEXT,
@@ -39,7 +116,7 @@ def setup_schema(connection: PostgresConnection, vector_size: int = 1536) -> boo
             """))
             conn.commit()
         
-        print("✓ Set up pgvector extension and vector table")
+        print(f"✓ Set up pgvector extension and vector table '{table_name}'")
         return True
     except Exception as e:
         print(f"✗ Failed to setup schema: {e}")
@@ -50,7 +127,7 @@ def setup_schema(connection: PostgresConnection, vector_size: int = 1536) -> boo
 
 def create_vector_table(
     connection: PostgresConnection,
-    table_name: str = "embeddings",
+    table_name: Optional[str] = None,
     vector_dimension: int = 1536,
     drop_existing: bool = False
 ) -> bool:
@@ -59,13 +136,16 @@ def create_vector_table(
     
     Args:
         connection: PostgresConnection instance
-        table_name: Name of the vector table
+        table_name: Name of the vector table (defaults to env var CLOUDSQL_VECTOR_TABLE)
         vector_dimension: Dimension of embedding vectors (default: 1536 for OpenAI)
         drop_existing: If True, drop existing table before creating
         
     Returns:
         True if successful, False otherwise
     """
+    if table_name is None:
+        table_name = get_default_table_name()
+    
     try:
         engine = connection.get_engine()
         
@@ -94,44 +174,72 @@ def create_vector_table(
         return False
 
 
-def get_table_stats(connection: PostgresConnection, table_name: str = "embeddings") -> dict:
+def get_table_stats(connection: PostgresConnection, table_name: Optional[str] = None) -> dict:
     """
-    Get statistics about the vector table.
+    Get statistics about the PGVector collection.
+    
+    Queries PGVector's langchain_pg_embedding table for the specified collection.
     
     Args:
         connection: PostgresConnection instance
-        table_name: Name of the vector table
+        table_name: Collection name (defaults to env var CLOUDSQL_VECTOR_TABLE)
         
     Returns:
-        Dictionary with table statistics
+        Dictionary with collection statistics
     """
+    if table_name is None:
+        table_name = get_default_table_name()
+    
     try:
         engine = connection.get_engine()
         
         with engine.connect() as conn:
-            # Get row count
-            result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
-            row_count = result.scalar()
+            # First, get the collection UUID
+            result = conn.execute(text("""
+                SELECT uuid FROM langchain_pg_collection 
+                WHERE name = :collection_name
+            """), {"collection_name": table_name})
+            collection_row = result.fetchone()
             
-            # Get unique resources
-            result = conn.execute(text(f"""
-                SELECT COUNT(DISTINCT metadata->>'resource_id') 
-                FROM {table_name} 
-                WHERE metadata->>'resource_id' IS NOT NULL
-            """))
+            if not collection_row:
+                return {
+                    'collection_name': table_name,
+                    'row_count': 0,
+                    'unique_resources': 0,
+                    'source_types': {},
+                    'error': 'Collection not found'
+                }
+            
+            collection_uuid = collection_row[0]
+            
+            # Get row count from langchain_pg_embedding
+            result = conn.execute(text("""
+                SELECT COUNT(*) FROM langchain_pg_embedding 
+                WHERE collection_id = :collection_uuid
+            """), {"collection_uuid": collection_uuid})
+            row_count = result.scalar() or 0
+            
+            # Get unique resources from metadata
+            result = conn.execute(text("""
+                SELECT COUNT(DISTINCT (cmetadata->>'resource_id')) 
+                FROM langchain_pg_embedding 
+                WHERE collection_id = :collection_uuid
+                AND cmetadata->>'resource_id' IS NOT NULL
+            """), {"collection_uuid": collection_uuid})
             unique_resources = result.scalar() or 0
             
             # Get source types distribution
-            result = conn.execute(text(f"""
-                SELECT metadata->>'source_type' as source_type, COUNT(*) as count
-                FROM {table_name}
-                WHERE metadata->>'source_type' IS NOT NULL
-                GROUP BY metadata->>'source_type'
-            """))
+            result = conn.execute(text("""
+                SELECT cmetadata->>'source_type' as source_type, COUNT(*) as count
+                FROM langchain_pg_embedding
+                WHERE collection_id = :collection_uuid
+                AND cmetadata->>'source_type' IS NOT NULL
+                GROUP BY cmetadata->>'source_type'
+            """), {"collection_uuid": collection_uuid})
             source_types = {row[0]: row[1] for row in result.fetchall()}
         
         return {
-            'table_name': table_name,
+            'collection_name': table_name,
             'row_count': row_count,
             'unique_resources': unique_resources,
             'source_types': source_types
@@ -142,22 +250,24 @@ def get_table_stats(connection: PostgresConnection, table_name: str = "embedding
 
 def create_ivfflat_index(
     connection: PostgresConnection,
-    table_name: str = "embeddings",
+    table_name: Optional[str] = None,
     column_name: str = "embedding",
     lists: Optional[int] = None,
     drop_existing: bool = False
 ) -> bool:
     """
-    Create an IVFFlat index on the vector column for efficient similarity search.
+    Create an IVFFlat index on PGVector's embedding column for efficient similarity search.
     
     IVFFlat is an approximate nearest neighbor index that significantly speeds up
     vector similarity searches. The index should be created after you have some
-    data in the table (at least a few rows, preferably 100+ for good performance).
+    data in the collection (at least a few rows, preferably 100+ for good performance).
+    
+    This function creates an index on PGVector's langchain_pg_embedding table.
     
     Args:
         connection: PostgresConnection instance
-        table_name: Name of the vector table
-        column_name: Name of the vector column (default: "embedding")
+        table_name: Collection name (defaults to env var CLOUDSQL_VECTOR_TABLE)
+        column_name: Name of the vector column in langchain_pg_embedding (default: "embedding")
         lists: Number of clusters/lists for the index. If None, auto-calculated
                based on row count (recommended: rows/1000, min 10).
                For best performance, provide a value based on your dataset size.
@@ -166,17 +276,38 @@ def create_ivfflat_index(
     Returns:
         True if successful, False otherwise
     """
+    if table_name is None:
+        table_name = get_default_table_name()
+    
     try:
         engine = connection.get_engine()
-        index_name = f"{table_name}_{column_name}_ivfflat_idx"
+        # Use collection name in index name for clarity
+        index_name = f"langchain_pg_embedding_{table_name}_{column_name}_ivfflat_idx"
         
         with engine.connect() as conn:
-            # Check if table exists and get row count
-            result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
-            row_count = result.scalar()
+            # Get row count from langchain_pg_embedding for the collection
+            # First get collection UUID
+            result = conn.execute(text("""
+                SELECT uuid FROM langchain_pg_collection 
+                WHERE name = :collection_name
+            """), {"collection_name": table_name})
+            collection_row = result.fetchone()
+            
+            if not collection_row:
+                print(f"⚠ Warning: Collection '{table_name}' not found. IVFFlat index requires an existing collection.")
+                return False
+            
+            collection_uuid = collection_row[0]
+            
+            # Get row count for this collection
+            result = conn.execute(text("""
+                SELECT COUNT(*) FROM langchain_pg_embedding 
+                WHERE collection_id = :collection_uuid
+            """), {"collection_uuid": collection_uuid})
+            row_count = result.scalar() or 0
             
             if row_count == 0:
-                print(f"⚠ Warning: Table {table_name} is empty. IVFFlat index requires data.")
+                print(f"⚠ Warning: Collection '{table_name}' is empty. IVFFlat index requires data.")
                 print("  Consider adding some vectors before creating the index.")
                 return False
             
@@ -193,25 +324,26 @@ def create_ivfflat_index(
                 conn.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
                 conn.commit()
             
-            # Create IVFFlat index
+            # Create IVFFlat index on langchain_pg_embedding table
             # Using vector_cosine_ops for cosine similarity (most common for embeddings)
             # Alternatives: vector_l2_ops (L2 distance), vector_ip_ops (inner product)
+            # Note: Index is created on all embeddings, but you can filter by collection_id in queries
             conn.execute(text(f"""
                 CREATE INDEX {index_name}
-                ON {table_name}
+                ON langchain_pg_embedding
                 USING ivfflat ({column_name} vector_cosine_ops)
                 WITH (lists = {lists})
             """))
             conn.commit()
         
-        print(f"✓ Created IVFFlat index '{index_name}' on {table_name}.{column_name} with lists={lists}")
+        print(f"✓ Created IVFFlat index '{index_name}' on langchain_pg_embedding.{column_name} for collection '{table_name}' with lists={lists}")
         print(f"  Index will speed up similarity searches on {row_count} vectors")
         return True
         
     except Exception as e:
         print(f"✗ Failed to create IVFFlat index: {e}")
         print("  Note: IVFFlat index requires:")
-        print("    - Table to exist with at least some data")
+        print("    - Collection to exist with at least some data")
         print("    - pgvector extension to be enabled")
-        print("    - Vector column to exist")
+        print("    - Vector column to exist in langchain_pg_embedding")
         return False

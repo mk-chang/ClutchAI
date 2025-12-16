@@ -35,7 +35,7 @@ class PostgresConnection:
             project_id: GCP project ID (or from GOOGLE_CLOUD_PROJECT env var)
             region: Cloud SQL instance region (or from CLOUDSQL_REGION env var)
             instance: Cloud SQL instance name (or from CLOUDSQL_INSTANCE env var)
-            database: Database name (or from CLOUDSQL_VECTOR_DATABASE env var)
+            database: Database name (or from CLOUDSQL_DATABASE env var)
             user: Database user (or from CLOUDSQL_USER env var)
             password: Database password (or from CLOUDSQL_PASSWORD env var, optional for IAM)
         """
@@ -43,7 +43,7 @@ class PostgresConnection:
         self.project_id = project_id or os.environ.get('GOOGLE_CLOUD_PROJECT')
         self.region = region or os.environ.get('CLOUDSQL_REGION')
         self.instance = instance or os.environ.get('CLOUDSQL_INSTANCE')
-        self.vectordb = database or os.environ.get('CLOUDSQL_VECTOR_DATABASE')
+        self.vectordb = database or os.environ.get('CLOUDSQL_DATABASE')
         self.user = user or os.environ.get('CLOUDSQL_USER')
         self.password = password or os.environ.get('CLOUDSQL_PASSWORD')
         
@@ -51,7 +51,7 @@ class PostgresConnection:
             raise ValueError(
                 "Cloud SQL connection parameters required. "
                 "Provide project_id, region, instance, database or set environment variables: "
-                "GOOGLE_CLOUD_PROJECT, CLOUDSQL_REGION, CLOUDSQL_INSTANCE, CLOUDSQL_VECTOR_DATABASE"
+                "GOOGLE_CLOUD_PROJECT, CLOUDSQL_REGION, CLOUDSQL_INSTANCE, CLOUDSQL_DATABASE"
             )
         
         # Initialize Cloud SQL Connector
@@ -122,3 +122,96 @@ class PostgresConnection:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.close()
+
+
+def create_database_if_not_exists(
+    project_id: Optional[str] = None,
+    region: Optional[str] = None,
+    instance: Optional[str] = None,
+    database: Optional[str] = None,
+    user: Optional[str] = None,
+    password: Optional[str] = None,
+) -> bool:
+    """
+    Create a database in Cloud SQL PostgreSQL if it doesn't exist.
+    
+    Connects to the default 'postgres' database first, then creates the target database.
+    
+    Args:
+        project_id: GCP project ID (or from GOOGLE_CLOUD_PROJECT env var)
+        region: Cloud SQL instance region (or from CLOUDSQL_REGION env var)
+        instance: Cloud SQL instance name (or from CLOUDSQL_INSTANCE env var)
+        database: Database name to create (or from CLOUDSQL_DATABASE env var)
+        user: Database user (or from CLOUDSQL_USER env var)
+        password: Database password (or from CLOUDSQL_PASSWORD env var, optional for IAM)
+        
+    Returns:
+        True if database was created or already exists, False otherwise
+    """
+    from sqlalchemy import text
+    
+    # Get connection parameters from args or environment
+    project_id = project_id or os.environ.get('GOOGLE_CLOUD_PROJECT')
+    region = region or os.environ.get('CLOUDSQL_REGION')
+    instance = instance or os.environ.get('CLOUDSQL_INSTANCE')
+    database = database or os.environ.get('CLOUDSQL_DATABASE')
+    user = user or os.environ.get('CLOUDSQL_USER')
+    password = password or os.environ.get('CLOUDSQL_PASSWORD')
+    
+    if not all([project_id, region, instance, database, user]):
+        raise ValueError(
+            "Cloud SQL connection parameters required. "
+            "Provide project_id, region, instance, database, user or set environment variables: "
+            "GOOGLE_CLOUD_PROJECT, CLOUDSQL_REGION, CLOUDSQL_INSTANCE, CLOUDSQL_DATABASE, CLOUDSQL_USER"
+        )
+    
+    # Connect to default 'postgres' database to create the target database
+    connector = Connector()
+    
+    try:
+        def getconn():
+            return connector.connect(
+                f"{project_id}:{region}:{instance}",
+                "pg8000",
+                user=user,
+                password=password,
+                db="postgres",  # Connect to default postgres database
+            )
+        
+        engine = create_engine(
+            "postgresql+pg8000://",
+            creator=getconn,
+            pool_pre_ping=True,
+        )
+        
+        # Check if database exists
+        with engine.connect() as conn:
+            result = conn.execute(text(
+                "SELECT 1 FROM pg_database WHERE datname = :dbname"
+            ), {"dbname": database})
+            
+            if result.fetchone():
+                print(f"✓ Database '{database}' already exists")
+                return True
+        
+        # Create database (must use autocommit for CREATE DATABASE)
+        # CREATE DATABASE cannot run inside a transaction, so we use raw connection
+        raw_conn = engine.raw_connection()
+        try:
+            raw_conn.autocommit = True
+            cursor = raw_conn.cursor()
+            cursor.execute(f'CREATE DATABASE "{database}"')
+            cursor.close()
+        finally:
+            raw_conn.close()
+            
+        print(f"✓ Created database '{database}'")
+        return True
+        
+    except Exception as e:
+        print(f"✗ Failed to create database '{database}': {e}")
+        return False
+    finally:
+        connector.close()
+        if 'engine' in locals():
+            engine.dispose()

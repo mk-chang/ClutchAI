@@ -22,7 +22,9 @@ from agents.tools.yahoo_api import YahooFantasyTool
 from agents.tools.nba_api import nbaAPITool
 from agents.tools.fantasy_news import FantasyNewsTool
 from agents.tools.dynasty_ranking import DynastyRankingTool
+from agents.tools.rotowire_rss import RotowireRSSFeedTool
 from data.cloud_sql.connection import PostgresConnection
+from data.cloud_sql.schema import get_default_table_name
 
 logger = get_logger(__name__)
 
@@ -45,7 +47,7 @@ class ClutchAIAgent:
         openai_api_key: Optional[str] = None,
         env_file_location: Optional[Path] = None,
         connection: Optional[PostgresConnection] = None,
-        table_name: str = "embeddings",
+        table_name: Optional[str] = None,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0,
         debug: bool = False,
@@ -60,7 +62,7 @@ class ClutchAIAgent:
             openai_api_key: OpenAI API key (or from env)
             env_file_location: Path to .env file location
             connection: PostgresConnection instance (optional, will create from env vars if not provided)
-            table_name: Name of the vector table in PostgreSQL (default: "embeddings")
+            table_name: Name of the vector table in PostgreSQL (defaults to env var CLOUDSQL_VECTOR_TABLE)
             model_name: OpenAI model to use
             temperature: Temperature for LLM
             debug: Enable debug mode for verbose logging
@@ -101,10 +103,13 @@ class ClutchAIAgent:
         )
         
         # Initialize RAG manager for vectorstore access
+        # RAGManager will load config from rag_config.yaml automatically
+        self.table_name = table_name or get_default_table_name()
         self.rag_manager = RAGManager(
             connection=connection,
-            table_name=table_name,
+            table_name=self.table_name,
             openai_api_key=self.openai_api_key,
+            project_root=self.env_file_location,
         )
         
         # Initialize vectorstore and retriever
@@ -156,7 +161,7 @@ class ClutchAIAgent:
         
         if 'error' not in stats:
             logger.debug(f"✓ Connected to PostgreSQL vectorstore")
-            logger.debug(f"  Table: {stats.get('table_name', 'embeddings')}")
+            logger.debug(f"  Table: {stats.get('table_name', self.table_name)}")
             logger.debug(f"  Total documents: {stats.get('row_count', 0):,}")
             logger.debug(f"  Unique resources: {stats.get('unique_resources', 0)}")
             
@@ -170,44 +175,83 @@ class ClutchAIAgent:
             # Get detailed information about resources (only if debug mode)
             if self.debug:
                 try:
-                    # Query for unique resources with counts
+                    # Query for unique resources with counts from langchain_postgres tables
                     from data.cloud_sql.connection import PostgresConnection
+                    from sqlalchemy import text
                     connection = PostgresConnection()
+                    engine = connection.get_engine()
+                    table_name = stats.get('table_name', self.table_name)
                     
-                    results = connection.execute(
-                        f"""
-                        SELECT 
-                            resource_id,
-                            source_type,
-                            title,
-                            url,
-                            COUNT(*) as chunks
-                        FROM {stats.get('table_name', 'embeddings')}
-                        WHERE resource_id IS NOT NULL
-                        GROUP BY resource_id, source_type, title, url
-                        ORDER BY source_type, title
-                        LIMIT 50
-                        """
-                    )
-                    
-                    if results:
-                        logger.debug(f"\n  Resources in vectorstore (showing up to 50):")
-                        youtube_count = 0
-                        article_count = 0
-                        for row in results:
-                            source_type = row.get('source_type', 'unknown')
-                            title = row.get('title', 'Untitled')
-                            resource_id = row.get('resource_id', '')
-                            chunks = row.get('chunks', 0)
+                    with engine.connect() as conn:
+                        # First, get the collection UUID
+                        result = conn.execute(text("""
+                            SELECT uuid FROM langchain_pg_collection 
+                            WHERE name = :collection_name
+                        """), {"collection_name": table_name})
+                        collection_row = result.fetchone()
+                        
+                        if not collection_row:
+                            logger.debug("Collection not found in langchain_pg_collection")
+                        else:
+                            collection_uuid = collection_row[0]
                             
-                            if source_type == 'youtube':
-                                youtube_count += 1
-                                logger.debug(f"    [{youtube_count}] {title}")
-                                logger.debug(f"        Type: YouTube | Chunks: {chunks} | ID: {resource_id[:12]}...")
-                            elif source_type == 'article':
-                                article_count += 1
-                                logger.debug(f"    [{article_count}] {title}")
-                                logger.debug(f"        Type: Article | Chunks: {chunks} | ID: {resource_id[:12]}...")
+                            # Query for unique resources with counts from langchain_pg_embedding
+                            result = conn.execute(text("""
+                                SELECT 
+                                    cmetadata->>'resource_id' as resource_id,
+                                    cmetadata->>'source_type' as source_type,
+                                    cmetadata->>'title' as title,
+                                    cmetadata->>'url' as url,
+                                    COUNT(*) as chunks
+                                FROM langchain_pg_embedding
+                                WHERE collection_id = :collection_uuid
+                                AND cmetadata->>'resource_id' IS NOT NULL
+                                GROUP BY cmetadata->>'resource_id', cmetadata->>'source_type', cmetadata->>'title', cmetadata->>'url'
+                                ORDER BY cmetadata->>'source_type', cmetadata->>'title'
+                                LIMIT 50
+                            """), {"collection_uuid": collection_uuid})
+                            results = result.fetchall()
+                            
+                            if results:
+                                logger.debug(f"\n  Resources in vectorstore (showing up to 50):")
+                                youtube_count = 0
+                                article_count = 0
+                                for row in results:
+                                    # Handle SQLAlchemy Row objects (can be accessed by index or attribute)
+                                    try:
+                                        # Try accessing by attribute name (SQLAlchemy Row objects support this)
+                                        if hasattr(row, 'resource_id'):
+                                            source_type = getattr(row, 'source_type', 'unknown')
+                                            title = getattr(row, 'title', 'Untitled')
+                                            resource_id = getattr(row, 'resource_id', '')
+                                            chunks = getattr(row, 'chunks', 0)
+                                        # Try accessing by index (tuple-like)
+                                        elif len(row) >= 5:
+                                            resource_id = row[0]
+                                            source_type = row[1]
+                                            title = row[2]
+                                            chunks = row[4]
+                                        # Try accessing as dict
+                                        elif isinstance(row, dict):
+                                            source_type = row.get('source_type', 'unknown')
+                                            title = row.get('title', 'Untitled')
+                                            resource_id = row.get('resource_id', '')
+                                            chunks = row.get('chunks', 0)
+                                        else:
+                                            logger.warning(f"Unexpected row format: {type(row)}")
+                                            continue
+                                    except (IndexError, AttributeError, KeyError) as e:
+                                        logger.warning(f"Error parsing row: {e}")
+                                        continue
+                                    
+                                    if source_type == 'youtube':
+                                        youtube_count += 1
+                                        logger.debug(f"    [{youtube_count}] {title}")
+                                        logger.debug(f"        Type: YouTube | Chunks: {chunks} | ID: {resource_id[:12] if resource_id else 'N/A'}...")
+                                    elif source_type == 'article':
+                                        article_count += 1
+                                        logger.debug(f"    [{article_count}] {title}")
+                                        logger.debug(f"        Type: Article | Chunks: {chunks} | ID: {resource_id[:12] if resource_id else 'N/A'}...")
                 except Exception as e:
                     logger.warning(f"Could not get detailed resource information: {e}")
         else:
@@ -271,16 +315,16 @@ class ClutchAIAgent:
         try:
             yahoo_tool = YahooFantasyTool(
                 query=self.query,
-                yahoo_league_id=self.yahoo_league_id,
+                debug=self.debug,
             )
-            tools.extend(yahoo_tool.get_tools())
+            tools.extend(yahoo_tool.get_all_tools())
         except Exception as e:
             logger.warning(f"Yahoo Fantasy tools not available: {e}")
         
         # NBA API tools
         try:
             nba_tool = nbaAPITool()
-            tools.extend(nba_tool.get_tools())
+            tools.extend(nba_tool.get_all_tools())
         except Exception as e:
             logger.warning(f"NBA API tools not available: {e}")
         
@@ -289,16 +333,25 @@ class ClutchAIAgent:
             news_urls = self.agent_config.get('yahoo_fantasy_news_urls', [])
             if news_urls:
                 fantasy_news_tool = FantasyNewsTool(urls=news_urls)
-                tools.extend(fantasy_news_tool.get_tools())
+                tools.extend(fantasy_news_tool.get_all_tools())
         except Exception as e:
             logger.warning(f"Fantasy News tools not available: {e}")
         
         # Dynasty Ranking tools
         try:
             dynasty_tool = DynastyRankingTool()
-            tools.extend(dynasty_tool.get_tools())
+            tools.extend(dynasty_tool.get_all_tools())
         except Exception as e:
             logger.warning(f"Dynasty Ranking tools not available: {e}")
+        
+        # Rotowire RSS tools
+        try:
+            rotowire_rss_url = self.agent_config.get('rotowire_rss_url')
+            if rotowire_rss_url:
+                rotowire_rss_tool = RotowireRSSFeedTool(rss_url=rotowire_rss_url)
+                tools.extend(rotowire_rss_tool.get_all_tools())
+        except Exception as e:
+            logger.warning(f"Rotowire RSS tools not available: {e}")
         
         # RAG retrieval tool (for podcast/article context)
         try:
@@ -354,6 +407,67 @@ class ClutchAIAgent:
         """
         inputs = {"messages": [("user", query)], **kwargs}
         return self.agent.invoke(inputs)
+    
+    def chat(self, query: str, conversation_history: Optional[list] = None) -> str:
+        """
+        Chat with the agent, supporting conversation history.
+        
+        Args:
+            query: User query/question
+            conversation_history: List of message dicts with 'role' and 'content' keys
+                                 (e.g., [{"role": "user", "content": "..."}, ...])
+            
+        Returns:
+            Agent response as a string
+        """
+        # Build messages list from conversation history if provided
+        messages = []
+        if conversation_history:
+            for msg in conversation_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role in ("user", "assistant"):
+                    messages.append((role, content))
+        
+        # Add the current query
+        messages.append(("user", query))
+        
+        # Invoke agent with full conversation history
+        inputs = {"messages": messages}
+        response = self.agent.invoke(inputs)
+        
+        # Extract text from response
+        # LangChain create_agent typically returns a dict with 'output' or 'messages' key
+        if isinstance(response, dict):
+            # Check for 'output' key first (standard LangChain agent response)
+            if "output" in response:
+                return str(response["output"])
+            # Check for 'messages' key
+            elif "messages" in response:
+                # Get the last message (assistant's response)
+                last_message = response["messages"][-1]
+                if hasattr(last_message, "content"):
+                    return str(last_message.content)
+                elif isinstance(last_message, tuple):
+                    return str(last_message[1])  # (role, content) tuple
+                else:
+                    return str(last_message)
+            # Try to get content directly
+            elif "content" in response:
+                return str(response["content"])
+            else:
+                return str(response)
+        elif isinstance(response, list) and len(response) > 0:
+            # If response is a list of messages, get the last one
+            last_message = response[-1]
+            if hasattr(last_message, "content"):
+                return str(last_message.content)
+            elif isinstance(last_message, tuple):
+                return str(last_message[1])
+            else:
+                return str(last_message)
+        else:
+            return str(response)
     
     def stream(self, query: str, **kwargs):
         """

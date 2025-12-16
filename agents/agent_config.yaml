@@ -10,3 +10,6 @@ yahoo_fantasy_news_urls:
 # URL for Hashtag Basketball Dynasty Rankings
 dynasty_rankings_url: 
   - https://hashtagbasketball.com/fantasy-basketball-dynasty-rankings
+
+# Rotowire RSS feed URL for NBA player news
+rotowire_rss_url: https://www.rotowire.com/rss/news.php?sport=NBA
