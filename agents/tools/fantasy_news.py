@@ -22,7 +22,7 @@ class FantasyNewsTool(FirecrawlTool):
         
         Args:
             api_key: Firecrawl API key (or from env FIRECRAWL_API_KEY)
-            urls: List of URLs to map for discovering Yahoo Fantasy NBA news links (from agent_config.yaml)
+            urls: List of URLs to map for discovering Yahoo Fantasy NBA news links (from config/tools_config.yaml)
             map_limit: Default limit for map operations (default: 200)
             debug: Enable debug logging (default: False)
         """
@@ -120,7 +120,7 @@ class FantasyNewsTool(FirecrawlTool):
         @tool(
             "map_all_yahoo_fantasy_nba_news",
             description=(
-                "Map all configured Yahoo Fantasy NBA news URLs from agent_config.yaml to discover available links. "
+                "Map all configured Yahoo Fantasy NBA news URLs from config/tools_config.yaml to discover available links. "
                 "Returns discovered URLs with titles and descriptions. Use this first to understand what content is available, "
                 "then use scrape_url on specific URLs as needed. Much faster than scraping since it only discovers URLs."
             )
@@ -139,7 +139,7 @@ class FantasyNewsTool(FirecrawlTool):
             if limit is None:
                 limit = self.map_limit
             if not self.urls:
-                return "No URLs configured. Add URLs to agent_config.yaml under 'yahoo_fantasy_news_urls'."
+                return "No URLs configured. Add URLs to tools_config.yaml under 'yahoo_fantasy_news_urls'."
             
             results = []
             for url in self.urls:

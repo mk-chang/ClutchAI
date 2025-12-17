@@ -26,7 +26,7 @@ class RotowireRSSFeedTool(RSSTool):
         super().__init__(debug=debug)
         self.rss_url = rss_url
         if not self.rss_url:
-            raise ValueError("rss_url is required. Provide it from agent_config.yaml or pass as parameter.")
+            raise ValueError("rss_url is required. Provide it from config/tools_config.yaml or pass as parameter.")
     
     def create_get_nba_news_tool(self):
         """Create a tool for fetching NBA news from Rotowire RSS feed."""

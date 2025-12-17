@@ -27,8 +27,8 @@ def _load_test_config():
 
 @pytest.fixture
 def rotowire_rss_url():
-    """Load Rotowire RSS URL from agent_config.yaml."""
-    config_path = Path(__file__).parent.parent / "agents" / "agent_config.yaml"
+    """Load Rotowire RSS URL from tools_config.yaml."""
+    config_path = Path(__file__).parent.parent / "config" / "tools_config.yaml"
     
     if config_path.exists():
         try:

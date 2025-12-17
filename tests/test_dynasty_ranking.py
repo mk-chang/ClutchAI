@@ -27,8 +27,8 @@ def _load_test_config():
 
 @pytest.fixture
 def dynasty_rankings_url():
-    """Load dynasty rankings URL from agent_config.yaml."""
-    config_path = Path(__file__).parent.parent / "agents" / "agent_config.yaml"
+    """Load dynasty rankings URL from tools_config.yaml."""
+    config_path = Path(__file__).parent.parent / "config" / "tools_config.yaml"
     
     if config_path.exists():
         try:

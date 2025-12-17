@@ -87,54 +87,81 @@ For detailed setup instructions, see:
 4. **RAG Pipeline**: On query, retrieves relevant context from vectorstore and augments the LLM prompt
 5. **Response Generation**: LLM generates grounded, explainable insights using both league data and knowledge base
 
-## 🤖 ReACT Framework & Tools
+## 🤖 Multi-Agent Architecture
 
-ClutchAI uses the **ReACT (Reasoning + Acting)** framework, which enables the agent to reason about user queries and take actions by calling specialized tools. The agent can dynamically decide which tools to use based on the query context.
+ClutchAI uses a multi-agent system with specialized agents working together to provide comprehensive answers. The system follows a sequential pipeline: the Supervisor Agent coordinates the workflow, the Research Agent fetches data from multiple sources, and the Analysis Agent generates recommendations.
 
 ### Architecture
 
 ```mermaid
 graph TB
-    subgraph Frontend["Frontend"]
-        A[User Query] --> B[Streamlit WebApp]
+    subgraph "User Interface"
+        UI[Streamlit App / CLI]
     end
     
-    subgraph Agent["ReACT Framework"]
-        C{ClutchAI Agent}
-        L[LLM]
+    subgraph "Multi-Agent System"
+        Supervisor[Supervisor Agent<br/>Orchestrator]
+        
+        subgraph "Research Layer"
+            Research[Research Agent]
+            Tools1[Yahoo Fantasy Tools]
+            Tools2[NBA API Tools]
+            Tools3[RAG Tools]
+            Tools4[News Tools]
+        end
+        
+        subgraph "Analysis Layer"
+            Analysis[Analysis Agent]
+            LLM[LLM for Analysis]
+        end
     end
     
-    subgraph Output["Output"]
-        K[Final Answer]
+    subgraph "Data Sources"
+        YahooAPI[Yahoo Fantasy API]
+        NBAAPI[NBA API]
+        VectorDB[(PostgreSQL<br/>Vector Store)]
+        RSS[RSS Feeds]
     end
     
-    subgraph RAGPipeline["RAG Pipeline"]
-        RAG[RAG] --> F[Vectorstore Retriever]
-        F --> I[PostgreSQL + pgvector]
-    end
+    UI --> Supervisor
+    Supervisor --> Research
+    Supervisor --> Analysis
     
-    subgraph APITools["API Tools"]
-        CT[ClutchAI Tools] --> D[Yahoo Fantasy Tools]
-        CT --> E[NBA API Tools]
-        D --> G[Yahoo Fantasy API]
-        E --> H[NBA.com API]
-    end
+    Research --> Tools1
+    Research --> Tools2
+    Research --> Tools3
+    Research --> Tools4
     
-    B --> C
-    C --> RAG
-    C --> CT
-    C -->|action| L
-    L -.->|reasoning| C
-    L --> K
-    K --> B
+    Tools1 --> YahooAPI
+    Tools2 --> NBAAPI
+    Tools3 --> VectorDB
+    Tools4 --> RSS
     
-    style Frontend stroke:#4A90E2,stroke-width:2px
-    style Agent stroke:#FF9500,stroke-width:2px
-    style RAGPipeline stroke:#2ECC71,stroke-width:2px
-    style APITools stroke:#9B59B6,stroke-width:2px
-    style Output stroke:#E91E63,stroke-width:2px
+    Analysis --> LLM
+    
+    style Supervisor fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
+    style Research fill:#50C878,stroke:#2E7D4E,stroke-width:2px,color:#fff
+    style Analysis fill:#FF6B6B,stroke:#C92A2A,stroke-width:2px,color:#fff
 ```
 
+**Agent Responsibilities:**
+- **Supervisor Agent**: Orchestrates the workflow, routes queries, and coordinates between Research and Analysis agents
+- **Research Agent**: Fetches data from multiple sources (Yahoo API, NBA API, knowledge base, news feeds)
+- **Analysis Agent**: Analyzes research data and generates recommendations with reasoning
+
+### Available Agent Tools
+
+| Name | Data Type | Implementation |
+|------|-----------|----------------|
+| Yahoo Fantasy Tools (45) | Live data | API Tool |
+| NBA API (16) | Live data | API Tool |
+| LockedOn Podcast Transcripts | Static data | RAG |
+| Articles | Static data | RAG |
+
+**Tool Categories:**
+- **Yahoo Fantasy Tools**: League info, standings, rosters, matchups, player stats, transactions
+- **NBA API Tools**: Player stats, team stats, game scores, box scores, play-by-play
+- **Vectorstore Retriever**: Semantic search over YouTube transcripts and articles
 
 ### VectorDB Data Pipeline
 
@@ -172,7 +199,7 @@ graph TD
 **Pipeline Features:**
 - **YouTube Videos**: Process podcast transcripts with configurable chunk sizes, delays, and batch limits
 - **Articles**: Scrape and ingest articles from various sources
-- **Configuration**: Centralized config files for RAG settings (`rag_config.yaml`) and pipeline settings (`vector_config.yaml`)
+- **Configuration**: Centralized config files in `config/` directory for RAG settings (`config/rag_config.yaml`) and pipeline settings (`config/vector_config.yaml`)
 - **Rate Limiting**: Built-in delays and retry logic to handle YouTube IP blocking
 
 ### Available Agent Tools
@@ -212,7 +239,7 @@ graph TD
 
 To add YouTube videos and articles to your knowledge base:
 
-1. **Configure settings** in `data/cloud_sql/vector_managers/vector_config.yaml`:
+1. **Configure settings** in `config/vector_config.yaml`:
    ```yaml
    youtube_channel:
      max_videos: 10  # Process 10 most recent videos per run
@@ -224,7 +251,7 @@ To add YouTube videos and articles to your knowledge base:
    python scripts/vectordb_pipelines/update_lockedon_knowledge.py
    ```
 
-3. **Customize RAG settings** in `agents/rag/rag_config.yaml`:
+3. **Customize RAG settings** in `config/rag_config.yaml`:
    ```yaml
    youtube:
      chunk_size_seconds: 30  # Transcript chunk size

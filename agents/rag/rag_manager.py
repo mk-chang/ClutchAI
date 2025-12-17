@@ -55,7 +55,7 @@ class RAGManager:
             current_file = Path(__file__).resolve()
             project_root = current_file.parent.parent.parent
         
-        config_path = project_root / 'agents' / 'rag' / 'rag_config.yaml'
+        config_path = project_root / 'config' / 'rag_config.yaml'
         if config_path.exists():
             with open(config_path, 'r') as f:
                 return yaml.safe_load(f) or {}

@@ -1,0 +1,7 @@
+# Streamlit App Configuration
+# Configure which agent system to use
+
+agent_type: "single"  # Options: "single" or "multi"
+# "single" - Uses the single ClutchAIAgent (ReACT framework)
+# "multi" - Uses the multi-agent system (Supervisor → Research → Analysis)
+

@@ -41,8 +41,8 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import streamlit as st
+import yaml
 from logger import setup_logging, get_logger
-from agents.agent import ClutchAIAgent
 
 # Setup logging early
 setup_logging(debug=DEBUG_MODE)
@@ -50,6 +50,44 @@ logger = get_logger(__name__)
 
 if DEBUG_MODE:
     logger.info("Debug mode enabled - verbose logging to terminal is active")
+
+# Load Streamlit config to determine which agent to use
+def load_streamlit_config() -> str:
+    """Load streamlit_config.yaml and return agent_type."""
+    config_path = project_root / "config" / "streamlit_config.yaml"
+    
+    if not config_path.exists():
+        logger.info("streamlit_config.yaml not found. Defaulting to 'single' agent.")
+        return "single"
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f) or {}
+        agent_type = config.get('agent_type', 'single')
+        
+        # Validate agent_type
+        if agent_type not in ['single', 'multi']:
+            logger.warning(f"Invalid agent_type '{agent_type}' in config. Defaulting to 'single'.")
+            return "single"
+        
+        logger.info(f"Loaded agent_type from config: {agent_type}")
+        return agent_type
+    except Exception as e:
+        logger.warning(f"Error loading streamlit_config.yaml: {e}. Defaulting to 'single'.")
+        return "single"
+
+# Determine which agent to use
+AGENT_TYPE = load_streamlit_config()
+
+# Import appropriate agent
+if AGENT_TYPE == "multi":
+    from agents.multi_agent import MultiAgentSystem
+    AgentClass = MultiAgentSystem
+    logger.info("Using Multi-Agent System")
+else:
+    from agents.single_agent import ClutchAIAgent
+    AgentClass = ClutchAIAgent
+    logger.info("Using Single Agent (ClutchAIAgent)")
 
 # Load environment variables from .env file
 env_file_location = project_root
@@ -126,13 +164,14 @@ if openai_api_key and yahoo_league_id:
         st.stop()
     
     # Check if agent needs to be initialized or reinitialized
-    # Include debug mode in agent_key to reinitialize when debug mode changes
-    agent_key = f"{openai_api_key[:10]}_{yahoo_client_id[:10] if yahoo_client_id else 'none'}_{league_id_int}_{DEBUG_MODE}"
+    # Include agent_type and debug mode in agent_key to reinitialize when they change
+    agent_key = f"{AGENT_TYPE}_{openai_api_key[:10]}_{yahoo_client_id[:10] if yahoo_client_id else 'none'}_{league_id_int}_{DEBUG_MODE}"
     if st.session_state.get("agent_key") != agent_key or st.session_state["agent"] is None:
-        with st.spinner("Initializing ClutchAI Agent..."):
+        agent_name = "Multi-Agent System" if AGENT_TYPE == "multi" else "ClutchAI Agent"
+        with st.spinner(f"Initializing {agent_name}..."):
             try:
-                logger.debug("Initializing ClutchAI Agent with debug mode enabled")
-                st.session_state["agent"] = ClutchAIAgent(
+                logger.debug(f"Initializing {agent_name} with debug mode: {DEBUG_MODE}")
+                st.session_state["agent"] = AgentClass(
                     yahoo_league_id=league_id_int,
                     yahoo_client_id=yahoo_client_id or None,
                     yahoo_client_secret=yahoo_secret or None,
@@ -141,9 +180,9 @@ if openai_api_key and yahoo_league_id:
                     debug=DEBUG_MODE,
                 )
                 st.session_state["agent_key"] = agent_key
-                logger.debug("ClutchAI Agent initialized successfully")
+                logger.debug(f"{agent_name} initialized successfully")
             except Exception as e:
-                error_msg = f"Failed to initialize agent: {e}"
+                error_msg = f"Failed to initialize {agent_name}: {e}"
                 st.error(error_msg)
                 logger.error("Agent initialization error", exc_info=True)
                 st.session_state["agent"] = None

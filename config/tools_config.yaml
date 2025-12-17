@@ -1,5 +1,3 @@
-system_prompt: You are a helpful assistant for a Yahoo Fantasy Sports league manager.
-
 # List of URLs to scrape for Yahoo Fantasy NBA news
 yahoo_fantasy_news_urls:
   - https://sports.yahoo.com/nba/news/
@@ -13,3 +11,4 @@ dynasty_rankings_url:
 
 # Rotowire RSS feed URL for NBA player news
 rotowire_rss_url: https://www.rotowire.com/rss/news.php?sport=NBA
+

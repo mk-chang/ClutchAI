@@ -38,3 +38,4 @@ retrieval:
     lambda_param: 0.5
     # Fetch this many documents before applying MMR
     fetch_k: 20
+

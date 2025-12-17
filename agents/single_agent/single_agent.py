@@ -66,6 +66,7 @@ class ClutchAIAgent:
             model_name: OpenAI model to use
             temperature: Temperature for LLM
             debug: Enable debug mode for verbose logging
+            
         """
         # Store debug mode and setup logging
         self.debug = debug
@@ -103,7 +104,7 @@ class ClutchAIAgent:
         )
         
         # Initialize RAG manager for vectorstore access
-        # RAGManager will load config from rag_config.yaml automatically
+        # RAGManager will load config from config/rag_config.yaml automatically
         self.table_name = table_name or get_default_table_name()
         self.rag_manager = RAGManager(
             connection=connection,
@@ -118,6 +119,9 @@ class ClutchAIAgent:
         
         # Load agent configuration
         self.agent_config = self._load_agent_config()
+        
+        # Load tools configuration
+        self.tools_config = self._load_tools_config()
         
         # Note: LangSmith tracing is automatically enabled if LANGCHAIN_TRACING_V2=true 
         # and LANGSMITH_API_KEY are set in environment variables.
@@ -275,13 +279,13 @@ class ClutchAIAgent:
         Returns:
             Dictionary with agent configuration
         """
-        config_path = Path(__file__).parent / "agent_config.yaml"
+        # agent_config.yaml is in config/ directory
+        config_path = Path(__file__).parent.parent.parent / "config" / "agent_config.yaml"
         
         if not config_path.exists():
             # Return default config if file doesn't exist
             return {
-                'system_prompt': 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.',
-                'yahoo_fantasy_news_urls': []
+                'system_prompt': 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.'
             }
         
         try:
@@ -291,15 +295,51 @@ class ClutchAIAgent:
             # Ensure required keys exist with defaults
             if 'system_prompt' not in config:
                 config['system_prompt'] = 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.'
-            if 'yahoo_fantasy_news_urls' not in config:
-                config['yahoo_fantasy_news_urls'] = []
             
             return config
         except Exception as e:
             logger.warning(f"Error loading agent_config.yaml: {e}. Using defaults.")
             return {
-                'system_prompt': 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.',
-                'yahoo_fantasy_news_urls': []
+                'system_prompt': 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.'
+            }
+    
+    def _load_tools_config(self) -> dict:
+        """
+        Load tools configuration from tools_config.yaml.
+        
+        Returns:
+            Dictionary with tools configuration
+        """
+        # tools_config.yaml is in config/ directory
+        config_path = Path(__file__).parent.parent.parent / "config" / "tools_config.yaml"
+        
+        if not config_path.exists():
+            # Return default config if file doesn't exist
+            return {
+                'yahoo_fantasy_news_urls': [],
+                'dynasty_rankings_url': [],
+                'rotowire_rss_url': None
+            }
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f) or {}
+            
+            # Ensure required keys exist with defaults
+            if 'yahoo_fantasy_news_urls' not in config:
+                config['yahoo_fantasy_news_urls'] = []
+            if 'dynasty_rankings_url' not in config:
+                config['dynasty_rankings_url'] = []
+            if 'rotowire_rss_url' not in config:
+                config['rotowire_rss_url'] = None
+            
+            return config
+        except Exception as e:
+            logger.warning(f"Error loading tools_config.yaml: {e}. Using defaults.")
+            return {
+                'yahoo_fantasy_news_urls': [],
+                'dynasty_rankings_url': [],
+                'rotowire_rss_url': None
             }
     
     def _create_tools(self):
@@ -330,7 +370,7 @@ class ClutchAIAgent:
         
         # Fantasy News tools
         try:
-            news_urls = self.agent_config.get('yahoo_fantasy_news_urls', [])
+            news_urls = self.tools_config.get('yahoo_fantasy_news_urls', [])
             if news_urls:
                 fantasy_news_tool = FantasyNewsTool(urls=news_urls)
                 tools.extend(fantasy_news_tool.get_all_tools())
@@ -339,14 +379,20 @@ class ClutchAIAgent:
         
         # Dynasty Ranking tools
         try:
-            dynasty_tool = DynastyRankingTool()
+            dynasty_rankings_urls = self.tools_config.get('dynasty_rankings_url', [])
+            # Use first URL if list provided, otherwise use default
+            dynasty_url = dynasty_rankings_urls[0] if dynasty_rankings_urls else None
+            if dynasty_url:
+                dynasty_tool = DynastyRankingTool(url=dynasty_url)
+            else:
+                dynasty_tool = DynastyRankingTool()
             tools.extend(dynasty_tool.get_all_tools())
         except Exception as e:
             logger.warning(f"Dynasty Ranking tools not available: {e}")
         
         # Rotowire RSS tools
         try:
-            rotowire_rss_url = self.agent_config.get('rotowire_rss_url')
+            rotowire_rss_url = self.tools_config.get('rotowire_rss_url')
             if rotowire_rss_url:
                 rotowire_rss_tool = RotowireRSSFeedTool(rss_url=rotowire_rss_url)
                 tools.extend(rotowire_rss_tool.get_all_tools())

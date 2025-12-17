@@ -37,7 +37,7 @@ logger = get_logger(__name__)
 
 # Load configuration from YAML files
 # Load pipeline-specific config
-vector_config_path = project_root / 'data' / 'cloud_sql' / 'vector_managers' / 'vector_config.yaml'
+vector_config_path = project_root / 'config' / 'vector_config.yaml'
 vector_config = {}
 if vector_config_path.exists():
     with open(vector_config_path, 'r') as f:
@@ -46,7 +46,7 @@ else:
     logger.warning(f"Vector config file not found at {vector_config_path}, using defaults")
 
 # Load RAG config for chunk_size_seconds (source of truth)
-rag_config_path = project_root / 'agents' / 'rag' / 'rag_config.yaml'
+rag_config_path = project_root / 'config' / 'rag_config.yaml'
 rag_config = {}
 if rag_config_path.exists():
     with open(rag_config_path, 'r') as f:
