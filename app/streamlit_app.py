@@ -1,6 +1,6 @@
 # Description: A simple Streamlit app that uses ClutchAI Agent for Yahoo Fantasy Basketball.
 # Local Testing Command: streamlit run streamlit_app.py
-# Debug Mode: streamlit run streamlit_app.py -- --debug
+# Debug Mode: streamlit run app/streamlit_app.py -- --debug
 #   OR: CLUTCHAI_DEBUG=1 streamlit run streamlit_app.py
 # For Deployment: https://docs.streamlit.io/develop/tutorials/chat-and-llm-apps/llm-quickstart
 
@@ -41,7 +41,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 import streamlit as st
-from agents.logger import setup_logging, get_logger
+from logger import setup_logging, get_logger
 from agents.agent import ClutchAIAgent
 
 # Setup logging early

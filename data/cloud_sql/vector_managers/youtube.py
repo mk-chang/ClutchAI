@@ -27,6 +27,9 @@ from langchain_community.document_loaders.youtube import TranscriptFormat
 from data.cloud_sql.connection import PostgresConnection
 from data.cloud_sql.vector_managers.base import BaseVectorManager
 from data.data_class import YouTubeVideo, extract_youtube_video_id
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class YoutubeVectorManager(BaseVectorManager):
@@ -151,7 +154,7 @@ class YoutubeVectorManager(BaseVectorManager):
         """
         yaml_path = vectordata_yaml or self.vectordata_yaml
         if not yaml_path or not yaml_path.exists():
-            print(f"Warning: YAML file not found at {yaml_path}")
+            logger.warning(f"YAML file not found at {yaml_path}")
             return []
         
         try:
@@ -159,7 +162,7 @@ class YoutubeVectorManager(BaseVectorManager):
                 data = yaml.safe_load(f)
                 
                 if not data:
-                    print("Warning: YAML file is empty.")
+                    logger.warning("YAML file is empty.")
                     return []
                 
                 videos = []
@@ -170,12 +173,12 @@ class YoutubeVectorManager(BaseVectorManager):
                     
                     for item_data in items:
                         if not isinstance(item_data, dict):
-                            print(f"Warning: Skipping invalid entry in {source_type}: {item_data}")
+                            logger.warning(f"Skipping invalid entry in {source_type}: {item_data}")
                             continue
                         
                         # Ensure required fields
                         if 'title' not in item_data or 'url' not in item_data:
-                            print(f"Warning: Skipping {source_type} entry without title or url: {item_data}")
+                            logger.warning(f"Skipping {source_type} entry without title or url: {item_data}")
                             continue
                         
                         video = YouTubeVideo.from_dict(item_data)
@@ -183,7 +186,7 @@ class YoutubeVectorManager(BaseVectorManager):
                 
                 return videos
         except (yaml.YAMLError, KeyError, TypeError) as e:
-            print(f"Warning: Error loading YAML file: {e}. Starting with empty list.")
+            logger.warning(f"Error loading YAML file: {e}. Starting with empty list.")
             return []
     
     def load_resource_content(
@@ -247,7 +250,7 @@ class YoutubeVectorManager(BaseVectorManager):
                 if attempt < self.max_retries and is_ip_block:
                     # Exponential backoff: delay doubles with each retry
                     delay = self.retry_delay * (2 ** attempt)
-                    print(f"  ⚠️  YouTube IP blocking detected. Waiting {delay:.1f} seconds before retry... (attempt {attempt + 1}/{self.max_retries + 1})")
+                    logger.warning(f"  ⚠️  YouTube IP blocking detected. Waiting {delay:.1f} seconds before retry... (attempt {attempt + 1}/{self.max_retries + 1})")
                     time.sleep(delay)
                     continue
                 else:
@@ -379,7 +382,7 @@ class YoutubeVectorManager(BaseVectorManager):
         )
         
         if not docs:
-            print(f"Warning: No transcript found for {url}")
+            logger.warning(f"No transcript found for {url}")
             return 0
         
         # Add documents to vectorstore using base class method
@@ -476,7 +479,6 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
         
         youtube = build('youtube', 'v3', developerKey=youtube_api_key)
         videos = []
-        next_page_token = None
         
         # Convert channel handle to channel ID if needed
         channel_id = None
@@ -518,42 +520,99 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
             else:
                 channel_id = channel_handle
         
-        # Build search parameters
-        search_params = {
-            'channelId': channel_id,
-            'type': 'video',
-            'part': 'id',
-            'order': 'date',
-            'maxResults': 50
-        }
-        
-        if published_after:
-            search_params['publishedAfter'] = f"{published_after}T00:00:00Z"
-        if published_before:
-            search_params['publishedBefore'] = f"{published_before}T23:59:59Z"
-        
-        # Fetch all videos
-        while True:
-            if next_page_token:
-                search_params['pageToken'] = next_page_token
-            
-            try:
-                search_response = youtube.search().list(**search_params).execute()
-            except HttpError as e:
-                raise ValueError(f"YouTube API error: {e}")
-            
-            video_ids = [item['id']['videoId'] for item in search_response.get('items', [])]
-            
-            if not video_ids:
-                break
-            
-            # Get detailed video information
-            video_details = youtube.videos().list(
-                part='snippet,contentDetails,statistics',
-                id=','.join(video_ids)
+        # Get the channel's uploads playlist ID (recommended approach for getting all videos)
+        try:
+            channel_response = youtube.channels().list(
+                part='contentDetails',
+                id=channel_id
             ).execute()
             
+            if not channel_response.get('items'):
+                raise ValueError(f"Channel not found: {channel_handle}")
+            
+            uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+        except HttpError as e:
+            raise ValueError(f"YouTube API error getting channel details: {e}")
+        
+        # Convert date strings to datetime for comparison
+        published_after_dt = None
+        published_before_dt = None
+        
+        if published_after:
+            published_after_dt = datetime.fromisoformat(f"{published_after}T00:00:00")
+        if published_before:
+            published_before_dt = datetime.fromisoformat(f"{published_before}T23:59:59")
+        
+        # Fetch all videos from the uploads playlist using playlistItems API
+        # This is more reliable than the Search API for getting all videos
+        next_page_token = None
+        video_ids = []
+        
+        while True:
+            playlist_params = {
+                'playlistId': uploads_playlist_id,
+                'part': 'contentDetails',
+                'maxResults': 50
+            }
+            
+            if next_page_token:
+                playlist_params['pageToken'] = next_page_token
+            
+            try:
+                playlist_response = youtube.playlistItems().list(**playlist_params).execute()
+            except HttpError as e:
+                raise ValueError(f"YouTube API error fetching playlist items: {e}")
+            
+            # Collect video IDs from this page
+            for item in playlist_response.get('items', []):
+                video_id = item['contentDetails']['videoId']
+                video_ids.append(video_id)
+            
+            # Check for next page
+            next_page_token = playlist_response.get('nextPageToken')
+            if not next_page_token:
+                break
+        
+        # Get detailed video information in batches (API limit is 50 per request)
+        # Filter by date range in Python code for reliability
+        batch_size = 50
+        for i in range(0, len(video_ids), batch_size):
+            batch_ids = video_ids[i:i + batch_size]
+            
+            try:
+                video_details = youtube.videos().list(
+                    part='snippet,contentDetails,statistics',
+                    id=','.join(batch_ids)
+                ).execute()
+            except HttpError as e:
+                raise ValueError(f"YouTube API error getting video details: {e}")
+            
             for video in video_details.get('items', []):
+                published_at_str = video['snippet']['publishedAt']
+                # Parse ISO format datetime (e.g., "2025-12-17T15:00:00Z")
+                # YouTube API returns ISO 8601 format with 'Z' for UTC
+                # Use regex to extract just the date-time part (YYYY-MM-DDTHH:MM:SS)
+                # Remove timezone indicators (Z, +HH:MM, -HH:MM)
+                match = re.match(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', published_at_str)
+                if match:
+                    published_at_clean = match.group(1)
+                else:
+                    # Fallback: just remove Z and timezone offsets
+                    published_at_clean = published_at_str.replace('Z', '').split('+')[0]
+                    if published_at_clean.count('-') > 2:
+                        # Has negative timezone, extract datetime part
+                        parts = published_at_clean.rsplit('-', 2)
+                        if len(parts) > 2 and ':' in parts[-1]:
+                            published_at_clean = '-'.join(parts[:-2])
+                
+                published_at_dt = datetime.fromisoformat(published_at_clean)
+                
+                # Apply date range filter
+                if published_after_dt and published_at_dt < published_after_dt:
+                    continue
+                if published_before_dt and published_at_dt > published_before_dt:
+                    continue
+                
                 video_info = {
                     'id': video['id'],
                     'title': video['snippet']['title'],
@@ -567,13 +626,72 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
                 
                 if max_results and len(videos) >= max_results:
                     return videos
-            
-            # Check for next page
-            next_page_token = search_response.get('nextPageToken')
-            if not next_page_token:
-                break
         
         return videos
+    
+    def _get_database_storage_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get database storage information including database size and video count.
+        
+        Returns:
+            Dictionary with storage information or None if error
+        """
+        try:
+            from sqlalchemy import text
+            engine = self.connection.get_engine()
+            
+            with engine.connect() as conn:
+                # Get database name
+                db_name = self.connection.vectordb
+                
+                # Get database size
+                result = conn.execute(text("""
+                    SELECT pg_size_pretty(pg_database_size(:db_name)) as db_size,
+                           pg_database_size(:db_name) as db_size_bytes
+                """), {"db_name": db_name})
+                db_row = result.fetchone()
+                database_size = db_row[0] if db_row else "N/A"
+                database_size_bytes = db_row[1] if db_row and len(db_row) > 1 else 0
+                
+                # Get collection UUID for this table
+                table_name = self.table_name
+                result = conn.execute(text("""
+                    SELECT uuid FROM langchain_pg_collection 
+                    WHERE name = :collection_name
+                """), {"collection_name": table_name})
+                collection_row = result.fetchone()
+                
+                video_count = 0
+                if collection_row:
+                    collection_uuid = collection_row[0]
+                    
+                    # Count distinct videos (resources with source_type='youtube')
+                    result = conn.execute(text("""
+                        SELECT COUNT(DISTINCT (cmetadata->>'resource_id')) 
+                        FROM langchain_pg_embedding 
+                        WHERE collection_id = :collection_uuid
+                        AND cmetadata->>'source_type' = 'youtube'
+                        AND cmetadata->>'resource_id' IS NOT NULL
+                    """), {"collection_uuid": collection_uuid})
+                    video_count = result.scalar() or 0
+                
+                return {
+                    'database_size': database_size,
+                    'database_size_bytes': database_size_bytes,
+                    'video_count': video_count,
+                }
+        except Exception as e:
+            # Return None on error, caller will handle it
+            return None
+    
+    @staticmethod
+    def _format_bytes(bytes_value: int) -> str:
+        """Format bytes to human-readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if bytes_value < 1024.0:
+                return f"{bytes_value:.2f} {unit}"
+            bytes_value /= 1024.0
+        return f"{bytes_value:.2f} PB"
     
     def _estimate_processing_requirements(
         self,
@@ -581,7 +699,8 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
         chunk_size_seconds: Optional[int] = None,
         skip_existing: bool = True,
         delay_between_videos: float = 3.0,
-        estimated_success_rate: float = 0.15
+        estimated_success_rate: float = 0.15,
+        max_videos_added: Optional[int] = None
     ) -> Dict[str, float]:
         """
         Estimate time and memory requirements for processing YouTube videos.
@@ -597,6 +716,7 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
             skip_existing: Whether to skip existing videos (affects estimate)
             delay_between_videos: Delay in seconds between videos (affects total time)
             estimated_success_rate: Estimated percentage of videos that will succeed (default: 0.15 = 15%)
+            max_videos_added: Maximum number of videos to add (stops early, None for all)
             
         Returns:
             Dictionary with estimated_time_minutes and estimated_memory_mb
@@ -605,13 +725,38 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
         
         total_videos = len(videos)
         
-        # Estimate videos that will actually be processed
-        # Based on actual data: ~15% success rate, some skipped
-        if skip_existing:
-            # Assume ~1-5% will be skipped (already in DB)
-            videos_to_process = total_videos * 0.95
+        # If max_videos_added is set, estimate how many videos we'll need to process
+        # to get that many successful additions
+        if max_videos_added is not None:
+            # Estimate: we need to process enough videos to get max_videos_added successful ones
+            # Account for skip_existing: if skipping, we need to process more videos
+            if skip_existing:
+                # Assume some videos will be skipped, so we need to process more
+                # Estimate: if success_rate is 15%, and 5% are skipped, we need:
+                # max_videos_added / (success_rate * (1 - skip_rate))
+                skip_rate = 0.05  # Assume 5% will be skipped
+                effective_success_rate = estimated_success_rate * (1 - skip_rate)
+                videos_to_process = max_videos_added / effective_success_rate if effective_success_rate > 0 else total_videos
+                # Cap at total videos available
+                videos_to_process = min(videos_to_process, total_videos)
+            else:
+                # No skipping, so we need max_videos_added / success_rate
+                videos_to_process = max_videos_added / estimated_success_rate if estimated_success_rate > 0 else total_videos
+                videos_to_process = min(videos_to_process, total_videos)
+            
+            # Update estimated successful videos to match max_videos_added
+            estimated_successful = max_videos_added
         else:
-            videos_to_process = total_videos
+            # Estimate videos that will actually be processed
+            # Based on actual data: ~15% success rate, some skipped
+            if skip_existing:
+                # Assume ~1-5% will be skipped (already in DB)
+                videos_to_process = total_videos * 0.95
+            else:
+                videos_to_process = total_videos
+            
+            # Estimate successful videos (based on actual: 14/175 = 8%, but using 15% as conservative)
+            estimated_successful = videos_to_process * estimated_success_rate
         
         # Estimate successful videos (based on actual: 14/175 = 8%, but using 15% as conservative)
         estimated_successful = videos_to_process * estimated_success_rate
@@ -664,7 +809,8 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
         skip_existing: bool = True,
         estimate_only: bool = False,
         delay_between_videos: float = 2.0,
-        max_videos: Optional[int] = None
+        max_videos: Optional[int] = None,
+        max_videos_added: Optional[int] = None
     ) -> Dict[str, any]:
         """
         Pipeline to fetch all videos from a YouTube channel published during NBA season and add to vectorstore.
@@ -679,6 +825,7 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
             estimate_only: If True, only return estimates without processing videos
             delay_between_videos: Delay in seconds between processing videos to avoid rate limiting (default: 2.0)
             max_videos: Maximum number of videos to process (processes most recent N videos, None for all)
+            max_videos_added: Maximum number of videos to add (stops after N videos are successfully added, None for all)
             
         Returns:
             Dictionary with results including videos_found, videos_added, chunks_added, etc.
@@ -696,8 +843,8 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
         )
         chunk_size = chunk_size_seconds if chunk_size_seconds is not None else self.chunk_size_seconds
         
-        print(f"Fetching videos from channel: {channel_handle}")
-        print(f"Season range: {season_start} to {season_end}")
+        logger.info(f"Fetching videos from channel: {channel_handle}")
+        logger.info(f"Season range: {season_start} to {season_end}")
         
         # Fetch videos from channel
         videos = self.fetch_channel_videos(
@@ -708,13 +855,13 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
         )
         
         total_videos_found = len(videos)
-        print(f"Found {total_videos_found} videos in season range")
+        logger.info(f"Found {total_videos_found} videos in season range")
         
         # Limit to most recent N videos if max_videos is specified
         # Videos are already sorted by date (newest first) from the API
         if max_videos is not None and max_videos > 0:
             videos = videos[:max_videos]
-            print(f"Limiting to most recent {len(videos)} videos (max_videos={max_videos})")
+            logger.info(f"Limiting to most recent {len(videos)} videos (max_videos={max_videos})")
         
         videos_to_process = len(videos)
         
@@ -738,23 +885,12 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
             'videos_skipped': 0,
             'videos_failed': 0,
             'chunks_added': 0,
-            'estimated_time_minutes': 0,
-            'estimated_memory_mb': 0
         }
         
-        # Calculate estimates (before processing, so we don't know actual success rate yet)
-        estimates = self._estimate_processing_requirements(
-            videos, 
-            chunk_size,
-            skip_existing=skip_existing,
-            delay_between_videos=delay_between_videos
-        )
-        results['estimated_time_minutes'] = estimates['estimated_time_minutes']
-        results['estimated_memory_mb'] = estimates['estimated_memory_mb']
+        logger.info(f"\nProcessing videos...")
         
-        print(f"\nEstimated processing time: {results['estimated_time_minutes']:.1f} minutes")
-        print(f"Estimated memory usage: {results['estimated_memory_mb']:.1f} MB")
-        print(f"\nProcessing videos...")
+        # Track actual processing time
+        processing_start_time = time.time()
         
         # Process each video
         for i, video in enumerate(videos, 1):
@@ -766,11 +902,11 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
             # Parse publish date
             publish_date = datetime.fromisoformat(published_at.replace('Z', '+00:00')).strftime('%Y-%m-%d')
             
-            print(f"\n[{i}/{len(videos)}] Processing: {video_title}")
+            logger.info(f"\n[{i}/{len(videos)}] Processing: {video_title}")
             
             # Check if already exists
             if skip_existing and video_id in existing_resource_ids:
-                print(f"  ⏭ Skipping (already in vectorstore)")
+                logger.info(f"  ⏭ Skipping (already in vectorstore)")
                 results['videos_skipped'] += 1
                 continue
             
@@ -789,33 +925,68 @@ class YoutubeChannelVectorManager(YoutubeVectorManager):
                     results['videos_added'] += 1
                     results['chunks_added'] += chunks_added
                     existing_resource_ids.add(video_id)
-                    print(f"  ✓ Added {chunks_added} chunks")
+                    logger.info(f"  ✓ Added {chunks_added} chunks")
+                    
+                    # Check if we've reached the limit for videos added
+                    if max_videos_added is not None and results['videos_added'] >= max_videos_added:
+                        logger.info(f"\n  🛑 Reached limit of {max_videos_added} videos added. Stopping.")
+                        break
                 else:
                     results['videos_failed'] += 1
-                    print(f"  ✗ Failed (no transcript found)")
+                    logger.warning(f"  ✗ Failed (no transcript found)")
             except Exception as e:
                 results['videos_failed'] += 1
                 error_msg = str(e).lower()
                 if 'blocking' in error_msg or 'blocked' in error_msg:
-                    print(f"  ✗ Failed: YouTube IP blocking (consider using a proxy)")
+                    logger.error(f"  ✗ Failed: YouTube IP blocking (consider using a proxy)")
                 else:
-                    print(f"  ✗ Failed: {e}")
+                    logger.error(f"  ✗ Failed: {e}")
             
-            # Add delay between videos to avoid rate limiting (except after last video)
+            # Add delay between videos to avoid rate limiting (except after last video or if we've reached the limit)
             if i < len(videos) and delay_between_videos > 0:
-                time.sleep(delay_between_videos)
+                # Don't delay if we've reached the max_videos_added limit
+                if max_videos_added is None or results['videos_added'] < max_videos_added:
+                    time.sleep(delay_between_videos)
         
-        print(f"\n{'='*60}")
-        print(f"Processing complete!")
-        print(f"  Videos found in season: {results['videos_found']}")
+        # Calculate actual processing time
+        processing_end_time = time.time()
+        actual_time_seconds = processing_end_time - processing_start_time
+        actual_time_minutes = actual_time_seconds / 60.0
+        results['actual_time_seconds'] = actual_time_seconds
+        results['actual_time_minutes'] = actual_time_minutes
+        
+        # Format duration for display
+        hours = int(actual_time_minutes // 60)
+        minutes = int(actual_time_minutes % 60)
+        seconds = int(actual_time_seconds % 60)
+        if hours > 0:
+            duration_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+        else:
+            duration_str = f"{minutes}:{seconds:02d}"
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Processing complete!")
+        logger.info(f"  Videos found in season: {results['videos_found']}")
         if results['videos_found'] != results.get('videos_to_process', results['videos_found']):
-            print(f"  Videos processed: {results.get('videos_to_process', results['videos_found'])} (limited by max_videos)")
-        print(f"  Videos added: {results['videos_added']}")
-        print(f"  Videos skipped: {results['videos_skipped']}")
-        print(f"  Videos failed: {results['videos_failed']}")
-        print(f"  Total chunks added: {results['chunks_added']}")
-        print(f"  Estimated time: {results['estimated_time_minutes']:.1f} minutes")
-        print(f"  Estimated memory: {results['estimated_memory_mb']:.1f} MB")
-        print(f"{'='*60}")
+            logger.info(f"  Videos processed: {results.get('videos_to_process', results['videos_found'])} (limited by max_videos)")
+        logger.info(f"  Videos added: {results['videos_added']}")
+        logger.info(f"  Videos skipped: {results['videos_skipped']}")
+        logger.info(f"  Videos failed: {results['videos_failed']}")
+        logger.info(f"  Total chunks added: {results['chunks_added']}")
+        logger.info(f"  Actual time: {duration_str} ({actual_time_minutes:.1f} minutes)")
+        logger.info(f"{'='*60}")
+        
+        # Get and display database storage information
+        try:
+            storage_info = self._get_database_storage_info()
+            if storage_info:
+                logger.info(f"\n{'='*60}")
+                logger.info(f"Database Storage Summary")
+                logger.info(f"{'='*60}")
+                logger.info(f"  Database size (used): {storage_info.get('database_size', 'N/A')}")
+                logger.info(f"  Total videos: {storage_info.get('video_count', 0)}")
+                logger.info(f"{'='*60}")
+        except Exception as e:
+            logger.warning(f"\n⚠️  Could not retrieve database storage information: {e}")
         
         return results

@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from langchain_core.tools import BaseTool as LangChainBaseTool
 
-from agents.logger import get_logger
+from logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -80,7 +80,7 @@ class RotowireRSSFeedTool(RSSTool):
                 self.create_get_nba_news_tool(),
             ]
         except Exception as e:
-            from agents.logger import get_logger
+            from logger import get_logger
             logger = get_logger(__name__)
             logger.warning(f"Rotowire RSS tools not available: {e}")
             return []

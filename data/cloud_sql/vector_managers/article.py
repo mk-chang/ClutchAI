@@ -29,6 +29,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from data.cloud_sql.connection import PostgresConnection
 from data.cloud_sql.vector_managers.base import BaseVectorManager
+from logger import get_logger
+
+logger = get_logger(__name__)
 from data.data_class import YouTubeVideo
 
 
@@ -121,7 +124,7 @@ class ArticleVectorManager(BaseVectorManager):
         """
         yaml_path = vectordata_yaml or self.vectordata_yaml
         if not yaml_path or not yaml_path.exists():
-            print(f"Warning: YAML file not found at {yaml_path}")
+            logger.warning(f"YAML file not found at {yaml_path}")
             return []
         
         try:
@@ -129,7 +132,7 @@ class ArticleVectorManager(BaseVectorManager):
                 data = yaml.safe_load(f)
                 
                 if not data:
-                    print("Warning: YAML file is empty.")
+                    logger.warning("YAML file is empty.")
                     return []
                 
                 articles = []
@@ -140,12 +143,12 @@ class ArticleVectorManager(BaseVectorManager):
                     
                     for item_data in items:
                         if not isinstance(item_data, dict):
-                            print(f"Warning: Skipping invalid entry in {source_type}: {item_data}")
+                            logger.warning(f"Skipping invalid entry in {source_type}: {item_data}")
                             continue
                         
                         # Ensure required fields
                         if 'title' not in item_data or 'url' not in item_data:
-                            print(f"Warning: Skipping {source_type} entry without title or url: {item_data}")
+                            logger.warning(f"Skipping {source_type} entry without title or url: {item_data}")
                             continue
                         
                         article = YouTubeVideo.from_dict(item_data)  # Reuse same dataclass
@@ -153,7 +156,7 @@ class ArticleVectorManager(BaseVectorManager):
                 
                 return articles
         except (yaml.YAMLError, KeyError, TypeError) as e:
-            print(f"Warning: Error loading YAML file: {e}. Starting with empty list.")
+            logger.warning(f"Error loading YAML file: {e}. Starting with empty list.")
             return []
     
     def scrape_article_content(self, url: str, max_content_length: Optional[int] = None) -> Dict[str, str]:
@@ -371,7 +374,7 @@ class ArticleVectorManager(BaseVectorManager):
         )
         
         if not docs:
-            print(f"Warning: No content found for {url}")
+            logger.warning(f"No content found for {url}")
             return 0
         
         # Add documents to vectorstore using base class method

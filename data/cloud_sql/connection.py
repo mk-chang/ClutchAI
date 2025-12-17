@@ -9,6 +9,9 @@ import os
 from typing import Optional
 from sqlalchemy import create_engine, Engine
 from google.cloud.sql.connector import Connector
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class PostgresConnection:
@@ -191,7 +194,7 @@ def create_database_if_not_exists(
             ), {"dbname": database})
             
             if result.fetchone():
-                print(f"✓ Database '{database}' already exists")
+                logger.info(f"Database '{database}' already exists")
                 return True
         
         # Create database (must use autocommit for CREATE DATABASE)
@@ -205,11 +208,11 @@ def create_database_if_not_exists(
         finally:
             raw_conn.close()
             
-        print(f"✓ Created database '{database}'")
+        logger.info(f"Created database '{database}'")
         return True
         
     except Exception as e:
-        print(f"✗ Failed to create database '{database}': {e}")
+        logger.error(f"Failed to create database '{database}': {e}")
         return False
     finally:
         connector.close()

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from langchain_core.tools import tool, BaseTool as LangChainBaseTool
 
 from .base import ClutchAITool
-from agents.logger import get_logger
+from logger import get_logger
 
 logger = get_logger(__name__)
 

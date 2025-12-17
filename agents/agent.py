@@ -16,7 +16,7 @@ from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from yfpy.query import YahooFantasySportsQuery
 
-from agents.logger import get_logger, setup_logging
+from logger import get_logger, setup_logging
 from agents.rag.rag_manager import RAGManager
 from agents.tools.yahoo_api import YahooFantasyTool
 from agents.tools.nba_api import nbaAPITool

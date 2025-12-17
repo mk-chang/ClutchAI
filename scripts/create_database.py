@@ -19,29 +19,34 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from data.cloud_sql.connection import create_database_if_not_exists
+from logger import get_logger, setup_logging
+
+logger = get_logger(__name__)
 
 
 def main():
     """Create the database if it doesn't exist."""
+    # Setup logging
+    setup_logging()
+    
     # Load environment variables from .env file if it exists
     env_file = project_root / ".env"
     if env_file.exists():
         load_dotenv(env_file)
     
-    print("Creating ClutchAI database...")
-    print(f"Database: {os.environ.get('CLOUDSQL_DATABASE', 'Not set')}")
-    print(f"Instance: {os.environ.get('CLOUDSQL_INSTANCE', 'Not set')}")
-    print(f"Region: {os.environ.get('CLOUDSQL_REGION', 'Not set')}")
-    print()
+    logger.info("Creating ClutchAI database...")
+    logger.info(f"Database: {os.environ.get('CLOUDSQL_DATABASE', 'Not set')}")
+    logger.info(f"Instance: {os.environ.get('CLOUDSQL_INSTANCE', 'Not set')}")
+    logger.info(f"Region: {os.environ.get('CLOUDSQL_REGION', 'Not set')}")
     
     success = create_database_if_not_exists()
     
     if success:
-        print("\n✓ Database setup complete!")
-        print("You can now run your vectordb pipelines.")
+        logger.info("Database setup complete!")
+        logger.info("You can now run your vectordb pipelines.")
         return 0
     else:
-        print("\n✗ Failed to create database. Please check the error messages above.")
+        logger.error("Failed to create database. Please check the error messages above.")
         return 1
 
 

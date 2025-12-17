@@ -8,6 +8,9 @@ import os
 from typing import Optional
 from sqlalchemy import text
 from data.cloud_sql.connection import PostgresConnection
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def get_default_table_name() -> str:
@@ -70,12 +73,12 @@ def setup_pgvector_extension(connection: PostgresConnection) -> bool:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             conn.commit()
         
-        print(f"✓ Set up pgvector extension")
+        logger.info("Set up pgvector extension")
         return True
     except Exception as e:
-        print(f"✗ Failed to setup pgvector extension: {e}")
-        print("  Note: Make sure pgvector extension is available in your PostgreSQL instance.")
-        print("  For Cloud SQL, enable the 'pgvector' flag when creating the instance.")
+        logger.error(f"Failed to setup pgvector extension: {e}")
+        logger.warning("Note: Make sure pgvector extension is available in your PostgreSQL instance.")
+        logger.warning("For Cloud SQL, enable the 'pgvector' flag when creating the instance.")
         return False
 
 
@@ -116,12 +119,12 @@ def setup_schema(connection: PostgresConnection, vector_size: int = 1536, table_
             """))
             conn.commit()
         
-        print(f"✓ Set up pgvector extension and vector table '{table_name}'")
+        logger.info(f"Set up pgvector extension and vector table '{table_name}'")
         return True
     except Exception as e:
-        print(f"✗ Failed to setup schema: {e}")
-        print("  Note: Make sure pgvector extension is available in your PostgreSQL instance.")
-        print("  For Cloud SQL, enable the 'pgvector' flag when creating the instance.")
+        logger.error(f"Failed to setup schema: {e}")
+        logger.warning("Note: Make sure pgvector extension is available in your PostgreSQL instance.")
+        logger.warning("For Cloud SQL, enable the 'pgvector' flag when creating the instance.")
         return False
 
 
@@ -166,11 +169,11 @@ def create_vector_table(
             """))
             conn.commit()
         
-        print(f"✓ Created/verified vector table {table_name} with pgvector support")
+        logger.info(f"Created/verified vector table {table_name} with pgvector support")
         return True
         
     except Exception as e:
-        print(f"✗ Failed to create vector table: {e}")
+        logger.error(f"Failed to create vector table: {e}")
         return False
 
 
@@ -294,7 +297,7 @@ def create_ivfflat_index(
             collection_row = result.fetchone()
             
             if not collection_row:
-                print(f"⚠ Warning: Collection '{table_name}' not found. IVFFlat index requires an existing collection.")
+                logger.warning(f"Collection '{table_name}' not found. IVFFlat index requires an existing collection.")
                 return False
             
             collection_uuid = collection_row[0]
@@ -307,8 +310,8 @@ def create_ivfflat_index(
             row_count = result.scalar() or 0
             
             if row_count == 0:
-                print(f"⚠ Warning: Collection '{table_name}' is empty. IVFFlat index requires data.")
-                print("  Consider adding some vectors before creating the index.")
+                logger.warning(f"Collection '{table_name}' is empty. IVFFlat index requires data.")
+                logger.warning("Consider adding some vectors before creating the index.")
                 return False
             
             # Calculate lists if not provided
@@ -317,7 +320,7 @@ def create_ivfflat_index(
                 # Minimum 10, round to nearest integer
                 calculated_lists = max(10, int(row_count / 1000))
                 lists = calculated_lists
-                print(f"  Auto-calculated lists parameter: {lists} (based on {row_count} rows)")
+                logger.info(f"Auto-calculated lists parameter: {lists} (based on {row_count} rows)")
             
             # Drop existing index if requested
             if drop_existing:
@@ -336,14 +339,14 @@ def create_ivfflat_index(
             """))
             conn.commit()
         
-        print(f"✓ Created IVFFlat index '{index_name}' on langchain_pg_embedding.{column_name} for collection '{table_name}' with lists={lists}")
-        print(f"  Index will speed up similarity searches on {row_count} vectors")
+        logger.info(f"Created IVFFlat index '{index_name}' on langchain_pg_embedding.{column_name} for collection '{table_name}' with lists={lists}")
+        logger.info(f"Index will speed up similarity searches on {row_count} vectors")
         return True
         
     except Exception as e:
-        print(f"✗ Failed to create IVFFlat index: {e}")
-        print("  Note: IVFFlat index requires:")
-        print("    - Collection to exist with at least some data")
-        print("    - pgvector extension to be enabled")
-        print("    - Vector column to exist in langchain_pg_embedding")
+        logger.error(f"Failed to create IVFFlat index: {e}")
+        logger.warning("Note: IVFFlat index requires:")
+        logger.warning("  - Collection to exist with at least some data")
+        logger.warning("  - pgvector extension to be enabled")
+        logger.warning("  - Vector column to exist in langchain_pg_embedding")
         return False

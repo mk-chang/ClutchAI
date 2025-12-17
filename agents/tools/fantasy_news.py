@@ -255,7 +255,7 @@ class FantasyNewsTool(FirecrawlTool):
             
             return tools
         except (ValueError, ImportError) as e:
-            from agents.logger import get_logger
+            from logger import get_logger
             logger = get_logger(__name__)
             logger.warning(f"Yahoo Fantasy News tools not available: {e}")
             return []

@@ -2,9 +2,9 @@
 # Configuration for YouTube channel processing pipelines
 
 youtube_channel:
-  # Maximum number of videos to process per run
-  # Set to null or omit to process all videos
-  max_videos: 10
+  # Maximum number of videos to add per run (stops after N videos are successfully added)
+  # Set to null or omit to add all videos
+  max_videos_added: 10
   
   # Delay between videos in seconds (to avoid rate limiting)
   delay_between_videos: 12.0

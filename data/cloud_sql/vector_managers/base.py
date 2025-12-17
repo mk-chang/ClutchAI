@@ -20,6 +20,9 @@ from langchain_postgres import PGVector
 from data.cloud_sql.connection import PostgresConnection
 from data.cloud_sql.schema import setup_pgvector_extension, get_default_table_name
 from data.data_class import YouTubeVideo
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class BaseVectorManager(ABC):
@@ -185,7 +188,7 @@ class BaseVectorManager(ABC):
             
             return resource_ids
         except Exception as e:
-            print(f"Warning: Could not retrieve existing resource IDs from vectorstore: {e}")
+            logger.warning(f"Could not retrieve existing resource IDs from vectorstore: {e}")
             return set()
     
     def delete_documents_by_identifier(self, resource_id: str) -> int:
@@ -223,7 +226,7 @@ class BaseVectorManager(ABC):
             
             return deleted_count
         except Exception as e:
-            print(f"Warning: Error deleting documents for resource_id {resource_id}: {e}")
+            logger.warning(f"Error deleting documents for resource_id {resource_id}: {e}")
             # Fallback: try to use engine's connection for direct SQL delete
             try:
                 # This is a workaround - PGVector may not expose direct SQL delete
@@ -363,9 +366,9 @@ class BaseVectorManager(ABC):
                     # Generate hash-based ID from URL for articles
                     url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
                     resource_id = f"art{url_hash}"
-                    print(f"Auto-generated resource_id for article: {resource_id}")
+                    logger.info(f"Auto-generated resource_id for article: {resource_id}")
                 else:
-                    print(f"Warning: Skipping {title} - resource_id is required but not provided")
+                    logger.warning(f"Skipping {title} - resource_id is required but not provided")
                     results['failed'] += 1
                     continue
             
@@ -375,25 +378,25 @@ class BaseVectorManager(ABC):
             
             # Handle force_update: delete existing documents first
             if force_update and resource_exists:
-                print(f"Force update requested for {title}. Deleting existing documents...")
+                logger.info(f"Force update requested for {title}. Deleting existing documents...")
                 deleted_count = self.delete_documents_by_identifier(resource_id)
                 if deleted_count > 0:
                     results['chunks_deleted'] += deleted_count
                     was_updated = True
-                    print(f"  ✓ Deleted {deleted_count} existing chunks")
+                    logger.info(f"  ✓ Deleted {deleted_count} existing chunks")
                 # Remove from existing_resource_ids so it will be re-added
                 existing_resource_ids.discard(resource_id)
                 resource_exists = False
             
             # Skip if resource exists and not forcing update
             if skip_existing and resource_exists and not force_update:
-                print(f"Skipping {title} (already in vectorstore, force_update=False)")
+                logger.info(f"Skipping {title} (already in vectorstore, force_update=False)")
                 results['skipped'] += 1
                 continue
             
             try:
                 action = "Updating" if was_updated else "Adding"
-                print(f"{action} {title} to vectorstore...")
+                logger.info(f"{action} {title} to vectorstore...")
                 chunks_added = self.add_resource_to_vectorstore(
                     url,
                     source_type=source_type,
@@ -413,12 +416,12 @@ class BaseVectorManager(ABC):
                     results['chunks_added'] += chunks_added
                     # Update existing_resource_ids to avoid duplicates
                     existing_resource_ids.add(resource_id)
-                    print(f"  ✓ Added {chunks_added} chunks")
+                    logger.info(f"  ✓ Added {chunks_added} chunks")
                 else:
                     results['failed'] += 1
-                    print(f"  ✗ Failed to add (no content)")
+                    logger.warning(f"  ✗ Failed to add (no content)")
             except Exception as e:
                 results['failed'] += 1
-                print(f"  ✗ Failed to add {title}: {e}")
+                logger.error(f"  ✗ Failed to add {title}: {e}")
         
         return results

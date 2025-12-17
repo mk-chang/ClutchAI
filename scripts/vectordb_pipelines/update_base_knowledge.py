@@ -21,28 +21,33 @@ sys.path.insert(0, str(project_root))
 from data.cloud_sql.connection import PostgresConnection
 from data.cloud_sql.vector_managers import YoutubeVectorManager, ArticleVectorManager
 from langchain_openai import OpenAIEmbeddings
+from logger import get_logger, setup_logging
 
 # Load environment variables
 env_path = project_root / '.env'
 load_dotenv(env_path)
+
+# Setup logging
+setup_logging(debug=False)
+logger = get_logger(__name__)
 
 def main():
     # Path to YAML file
     yaml_path = project_root / 'data' / 'knowledge_base.yaml'
     
     if not yaml_path.exists():
-        print(f"❌ YAML file not found: {yaml_path}")
+        logger.error(f"YAML file not found: {yaml_path}")
         return
     
-    print("Updating vectordb from YAML...")
-    print(f"YAML file: {yaml_path}\n")
+    logger.info("Updating vectordb from YAML...")
+    logger.info(f"YAML file: {yaml_path}\n")
     
     # Connect
     connection = PostgresConnection()
     embeddings = OpenAIEmbeddings(api_key=os.environ.get('OPENAI_API_KEY'))
     
     # Process YouTube videos
-    print("Processing YouTube videos...")
+    logger.info("Processing YouTube videos...")
     youtube_manager = YoutubeVectorManager(
         connection=connection,
         embeddings=embeddings,
@@ -55,7 +60,7 @@ def main():
     )
     
     # Process articles
-    print("\nProcessing articles...")
+    logger.info("\nProcessing articles...")
     article_manager = ArticleVectorManager(
         connection=connection,
         embeddings=embeddings,
@@ -68,20 +73,20 @@ def main():
     )
     
     # Summary
-    print("\n" + "=" * 60)
-    print("Summary")
-    print("=" * 60)
-    print(f"YouTube - Added: {youtube_results.get('added', 0)}, "
+    logger.info("\n" + "=" * 60)
+    logger.info("Summary")
+    logger.info("=" * 60)
+    logger.info(f"YouTube - Added: {youtube_results.get('added', 0)}, "
           f"Skipped: {youtube_results.get('skipped', 0)}, "
           f"Failed: {youtube_results.get('failed', 0)}")
-    print(f"Articles - Added: {article_results.get('added', 0)}, "
+    logger.info(f"Articles - Added: {article_results.get('added', 0)}, "
           f"Skipped: {article_results.get('skipped', 0)}, "
           f"Failed: {article_results.get('failed', 0)}")
-    print(f"Total chunks added: {youtube_results.get('chunks_added', 0) + article_results.get('chunks_added', 0):,}")
-    print("=" * 60)
+    logger.info(f"Total chunks added: {youtube_results.get('chunks_added', 0) + article_results.get('chunks_added', 0):,}")
+    logger.info("=" * 60)
     
     connection.close()
-    print("\n✅ Update complete!")
+    logger.info("\n✅ Update complete!")
 
 if __name__ == "__main__":
     main()
