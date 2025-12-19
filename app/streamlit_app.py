@@ -1,5 +1,5 @@
 # Description: A simple Streamlit app that uses ClutchAI Agent for Yahoo Fantasy Basketball.
-# Local Testing Command: streamlit run streamlit_app.py
+# Local Testing Command: streamlit run app/streamlit_app.py
 # Debug Mode: streamlit run app/streamlit_app.py -- --debug
 #   OR: CLUTCHAI_DEBUG=1 streamlit run streamlit_app.py
 # For Deployment: https://docs.streamlit.io/develop/tutorials/chat-and-llm-apps/llm-quickstart
@@ -52,32 +52,46 @@ if DEBUG_MODE:
     logger.info("Debug mode enabled - verbose logging to terminal is active")
 
 # Load Streamlit config to determine which agent to use
-def load_streamlit_config() -> str:
-    """Load streamlit_config.yaml and return agent_type."""
+def load_streamlit_config() -> dict:
+    """Load streamlit_config.yaml and return config dict."""
     config_path = project_root / "config" / "streamlit_config.yaml"
     
     if not config_path.exists():
-        logger.info("streamlit_config.yaml not found. Defaulting to 'single' agent.")
-        return "single"
+        logger.info("streamlit_config.yaml not found. Using defaults.")
+        return {"agent_type": "single", "max_history_messages": 20}
     
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f) or {}
+        
         agent_type = config.get('agent_type', 'single')
         
         # Validate agent_type
         if agent_type not in ['single', 'multi']:
             logger.warning(f"Invalid agent_type '{agent_type}' in config. Defaulting to 'single'.")
-            return "single"
+            agent_type = "single"
         
-        logger.info(f"Loaded agent_type from config: {agent_type}")
-        return agent_type
+        max_history_messages = config.get('max_history_messages', 20)
+        # Ensure it's a positive integer
+        try:
+            max_history_messages = max(1, int(max_history_messages))
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid max_history_messages value. Using default: 20")
+            max_history_messages = 20
+        
+        logger.info(f"Loaded config: agent_type={agent_type}, max_history_messages={max_history_messages}")
+        return {
+            "agent_type": agent_type,
+            "max_history_messages": max_history_messages
+        }
     except Exception as e:
-        logger.warning(f"Error loading streamlit_config.yaml: {e}. Defaulting to 'single'.")
-        return "single"
+        logger.warning(f"Error loading streamlit_config.yaml: {e}. Using defaults.")
+        return {"agent_type": "single", "max_history_messages": 20}
 
-# Determine which agent to use
-AGENT_TYPE = load_streamlit_config()
+# Load Streamlit config
+STREAMLIT_CONFIG = load_streamlit_config()
+AGENT_TYPE = STREAMLIT_CONFIG["agent_type"]
+MAX_HISTORY_MESSAGES = STREAMLIT_CONFIG["max_history_messages"]
 
 # Import appropriate agent
 if AGENT_TYPE == "multi":
@@ -116,6 +130,8 @@ if "yahoo_secret" not in st.session_state:
     st.session_state.yahoo_secret = os.environ.get('YAHOO_CLIENT_SECRET', "")
 if "yahoo_league_id" not in st.session_state:
     st.session_state.yahoo_league_id = os.environ.get('YAHOO_LEAGUE_ID', "58930")
+if "team_name" not in st.session_state:
+    st.session_state.team_name = os.environ.get('TEAM_NAME', "KATmandu Climbers")
 
 with st.sidebar:
     openai_api_key = st.text_input(
@@ -142,6 +158,12 @@ with st.sidebar:
         placeholder="58930",
         help="Set YAHOO_LEAGUE_ID"
     )
+    team_name = st.text_input(
+        "Team Name",
+        key="team_name",
+        placeholder="KATmandu Climbers",
+        help="Your fantasy team name"
+    )
     "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
     "[Get an Yahoo API keys](https://developer.yahoo.com/apps/)"
     "[View the source code](https://github.com/mk-chang/ClutchAI)"
@@ -163,22 +185,29 @@ if openai_api_key and yahoo_league_id:
         st.error("Yahoo League ID must be a number.")
         st.stop()
     
+    # Get team name from session state
+    team_name = st.session_state.get("team_name", "KATmandu Climbers")
+    
     # Check if agent needs to be initialized or reinitialized
-    # Include agent_type and debug mode in agent_key to reinitialize when they change
-    agent_key = f"{AGENT_TYPE}_{openai_api_key[:10]}_{yahoo_client_id[:10] if yahoo_client_id else 'none'}_{league_id_int}_{DEBUG_MODE}"
+    # Include agent_type, team_name, and debug mode in agent_key to reinitialize when they change
+    agent_key = f"{AGENT_TYPE}_{openai_api_key[:10]}_{yahoo_client_id[:10] if yahoo_client_id else 'none'}_{league_id_int}_{team_name}_{DEBUG_MODE}"
     if st.session_state.get("agent_key") != agent_key or st.session_state["agent"] is None:
         agent_name = "Multi-Agent System" if AGENT_TYPE == "multi" else "ClutchAI Agent"
         with st.spinner(f"Initializing {agent_name}..."):
             try:
-                logger.debug(f"Initializing {agent_name} with debug mode: {DEBUG_MODE}")
-                st.session_state["agent"] = AgentClass(
-                    yahoo_league_id=league_id_int,
-                    yahoo_client_id=yahoo_client_id or None,
-                    yahoo_client_secret=yahoo_secret or None,
-                    openai_api_key=openai_api_key,
-                    env_file_location=env_file_location,
-                    debug=DEBUG_MODE,
-                )
+                logger.debug(f"Initializing {agent_name} with debug mode: {DEBUG_MODE}, team_name: {team_name}")
+                init_kwargs = {
+                    "yahoo_league_id": league_id_int,
+                    "yahoo_client_id": yahoo_client_id or None,
+                    "yahoo_client_secret": yahoo_secret or None,
+                    "openai_api_key": openai_api_key,
+                    "env_file_location": env_file_location,
+                    "debug": DEBUG_MODE,
+                }
+                # Only add team_name if using MultiAgentSystem
+                if AGENT_TYPE == "multi":
+                    init_kwargs["team_name"] = team_name
+                st.session_state["agent"] = AgentClass(**init_kwargs)
                 st.session_state["agent_key"] = agent_key
                 logger.debug(f"{agent_name} initialized successfully")
             except Exception as e:
@@ -211,10 +240,16 @@ if prompt := st.chat_input():
     # Get agent response
     with st.spinner("Thinking..."):
         try:
-            # Pass conversation history (excluding the current prompt which is already added)
-            conversation_history = st.session_state.messages[:-1]  # All messages except the one we just added
-            logger.debug(f"Processing prompt: {prompt[:100]}...")
-            response = st.session_state["agent"].chat(prompt, conversation_history=conversation_history)
+            # Pass all history - the chat method will handle token-aware truncation
+            # This is more accurate than message count since message lengths vary
+            all_history = st.session_state.messages[:-1]  # All messages except the one we just added
+            
+            logger.debug(f"Processing prompt: {prompt[:100]}... (using {len(all_history)} history messages)")
+            response = st.session_state["agent"].chat(
+                prompt, 
+                conversation_history=all_history,
+                max_history_messages=MAX_HISTORY_MESSAGES  # Fallback if token counting fails
+            )
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.chat_message("assistant").write(response)
             logger.debug(f"Response generated successfully ({len(response)} characters)")

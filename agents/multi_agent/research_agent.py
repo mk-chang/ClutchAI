@@ -9,16 +9,12 @@ This agent is responsible for gathering data from all available sources:
 - Dynasty Rankings
 """
 
-import os
-import yaml
 from pathlib import Path
 from typing import Optional, List
 from langchain_core.tools import tool
-from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
 from yfpy.query import YahooFantasySportsQuery
 
-from logger import get_logger
+from agents.multi_agent.base_agent import BaseAgent
 from agents.rag.rag_manager import RAGManager
 from agents.tools.yahoo_api import YahooFantasyTool
 from agents.tools.nba_api import nbaAPITool
@@ -26,10 +22,10 @@ from agents.tools.fantasy_news import FantasyNewsTool
 from agents.tools.dynasty_ranking import DynastyRankingTool
 from agents.tools.rotowire_rss import RotowireRSSFeedTool
 
-logger = get_logger(__name__)
+logger = None  # Will be set by BaseAgent
 
 
-class ResearchAgent:
+class ResearchAgent(BaseAgent):
     """
     Research Agent that gathers data from multiple sources.
     """
@@ -54,70 +50,28 @@ class ResearchAgent:
             project_root: Path to project root for loading config
             debug: Enable debug logging
         """
-        self.query = query
-        self.rag_manager = rag_manager
-        self.retriever = rag_manager.retriever
-        self.tools_config = tools_config
-        self.debug = debug
-        self.logger = get_logger(__name__)
-        
-        # Load multi-agent config
-        self.config = self._load_config(project_root)
-        research_config = self.config.get('research', {})
-        
-        # Get model settings from config
-        model_name = research_config.get('model_name', 'gpt-4o-mini')
-        temperature = research_config.get('temperature', 0)
-        
-        # Get API key
-        self.openai_api_key = openai_api_key or os.environ.get('OPENAI_API_KEY')
-        if not self.openai_api_key:
-            raise ValueError("OpenAI API key is required.")
-        
-        # Create tools
-        self.tools = self._create_tools()
-        
-        # Initialize LLM
-        self.llm = ChatOpenAI(
-            model=model_name,
-            temperature=temperature,
-            api_key=self.openai_api_key,
-        )
-        
-        # Get system prompt from config
-        system_prompt = research_config.get(
-            'system_prompt',
-            'You are a research specialist. Gather comprehensive data from all available sources.'
-        )
-        
-        # Create agent
-        self.agent = create_agent(
-            model=self.llm,
-            tools=self.tools,
-            system_prompt=system_prompt,
+        # Call parent initializer (which stores query, rag_manager, tools_config)
+        super().__init__(
+            query=query,
+            rag_manager=rag_manager,
+            tools_config=tools_config,
+            openai_api_key=openai_api_key,
+            project_root=project_root,
+            debug=debug,
         )
     
-    def _load_config(self, project_root: Optional[Path] = None) -> dict:
-        """Load multi-agent configuration."""
-        if project_root is None:
-            project_root = Path(__file__).parent.parent.parent.parent
-        
-        config_path = project_root / 'config' / 'multi_agent_config.yaml'
-        
-        if not config_path.exists():
-            self.logger.warning(f"Config file not found: {config_path}. Using defaults.")
-            return {}
-        
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f) or {}
-        except Exception as e:
-            self.logger.warning(f"Error loading multi_agent_config.yaml: {e}. Using defaults.")
-            return {}
+    def _get_config_section(self) -> str:
+        """Get the configuration section name for this agent."""
+        return 'research'
+    
+    def _get_default_system_prompt(self) -> str:
+        """Get default system prompt if not found in config."""
+        return 'You are a research specialist. Gather comprehensive data from all available sources.'
     
     def _create_tools(self) -> List:
         """Create all research tools."""
-        tools = []
+        # Start with base tools (includes BasicTool)
+        tools = list(super()._create_base_tools())
         
         # Yahoo Fantasy API tools
         try:
@@ -213,28 +167,4 @@ class ResearchAgent:
         
         self.logger.info(f"Research Agent initialized with {len(tools)} tools")
         return tools
-    
-    def invoke(self, query: str, **kwargs):
-        """
-        Invoke the research agent with a query.
-        
-        Args:
-            query: Research query/task
-            **kwargs: Additional arguments
-            
-        Returns:
-            Research data/response
-        """
-        self.logger.debug(f"Research Agent handling query: {query[:100]}...")
-        
-        inputs = {"messages": [("user", query)], **kwargs}
-        response = self.agent.invoke(inputs)
-        
-        return response
-    
-    def stream(self, query: str, **kwargs):
-        """Stream research agent responses."""
-        inputs = {"messages": [("user", query)], **kwargs}
-        for event in self.agent.stream(inputs):
-            yield event
 

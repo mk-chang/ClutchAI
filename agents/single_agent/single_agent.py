@@ -11,6 +11,8 @@ import yaml
 from pathlib import Path
 from typing import Optional
 
+import tiktoken
+
 from langchain_core.tools import tool, StructuredTool
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
@@ -23,6 +25,7 @@ from agents.tools.nba_api import nbaAPITool
 from agents.tools.fantasy_news import FantasyNewsTool
 from agents.tools.dynasty_ranking import DynastyRankingTool
 from agents.tools.rotowire_rss import RotowireRSSFeedTool
+from agents.tools.basic import BasicTool
 from data.cloud_sql.connection import PostgresConnection
 from data.cloud_sql.schema import get_default_table_name
 
@@ -119,6 +122,8 @@ class ClutchAIAgent:
         
         # Load agent configuration
         self.agent_config = self._load_agent_config()
+        # Store max_tokens from config (default: 150000)
+        self.max_tokens = self.agent_config.get('max_tokens', 150000)
         
         # Load tools configuration
         self.tools_config = self._load_tools_config()
@@ -175,89 +180,6 @@ class ClutchAIAgent:
                 logger.debug(f"  Source types:")
                 for source_type, count in source_types.items():
                     logger.debug(f"    - {source_type}: {count} documents")
-            
-            # Get detailed information about resources (only if debug mode)
-            if self.debug:
-                try:
-                    # Query for unique resources with counts from langchain_postgres tables
-                    from data.cloud_sql.connection import PostgresConnection
-                    from sqlalchemy import text
-                    connection = PostgresConnection()
-                    engine = connection.get_engine()
-                    table_name = stats.get('table_name', self.table_name)
-                    
-                    with engine.connect() as conn:
-                        # First, get the collection UUID
-                        result = conn.execute(text("""
-                            SELECT uuid FROM langchain_pg_collection 
-                            WHERE name = :collection_name
-                        """), {"collection_name": table_name})
-                        collection_row = result.fetchone()
-                        
-                        if not collection_row:
-                            logger.debug("Collection not found in langchain_pg_collection")
-                        else:
-                            collection_uuid = collection_row[0]
-                            
-                            # Query for unique resources with counts from langchain_pg_embedding
-                            result = conn.execute(text("""
-                                SELECT 
-                                    cmetadata->>'resource_id' as resource_id,
-                                    cmetadata->>'source_type' as source_type,
-                                    cmetadata->>'title' as title,
-                                    cmetadata->>'url' as url,
-                                    COUNT(*) as chunks
-                                FROM langchain_pg_embedding
-                                WHERE collection_id = :collection_uuid
-                                AND cmetadata->>'resource_id' IS NOT NULL
-                                GROUP BY cmetadata->>'resource_id', cmetadata->>'source_type', cmetadata->>'title', cmetadata->>'url'
-                                ORDER BY cmetadata->>'source_type', cmetadata->>'title'
-                                LIMIT 50
-                            """), {"collection_uuid": collection_uuid})
-                            results = result.fetchall()
-                            
-                            if results:
-                                logger.debug(f"\n  Resources in vectorstore (showing up to 50):")
-                                youtube_count = 0
-                                article_count = 0
-                                for row in results:
-                                    # Handle SQLAlchemy Row objects (can be accessed by index or attribute)
-                                    try:
-                                        # Try accessing by attribute name (SQLAlchemy Row objects support this)
-                                        if hasattr(row, 'resource_id'):
-                                            source_type = getattr(row, 'source_type', 'unknown')
-                                            title = getattr(row, 'title', 'Untitled')
-                                            resource_id = getattr(row, 'resource_id', '')
-                                            chunks = getattr(row, 'chunks', 0)
-                                        # Try accessing by index (tuple-like)
-                                        elif len(row) >= 5:
-                                            resource_id = row[0]
-                                            source_type = row[1]
-                                            title = row[2]
-                                            chunks = row[4]
-                                        # Try accessing as dict
-                                        elif isinstance(row, dict):
-                                            source_type = row.get('source_type', 'unknown')
-                                            title = row.get('title', 'Untitled')
-                                            resource_id = row.get('resource_id', '')
-                                            chunks = row.get('chunks', 0)
-                                        else:
-                                            logger.warning(f"Unexpected row format: {type(row)}")
-                                            continue
-                                    except (IndexError, AttributeError, KeyError) as e:
-                                        logger.warning(f"Error parsing row: {e}")
-                                        continue
-                                    
-                                    if source_type == 'youtube':
-                                        youtube_count += 1
-                                        logger.debug(f"    [{youtube_count}] {title}")
-                                        logger.debug(f"        Type: YouTube | Chunks: {chunks} | ID: {resource_id[:12] if resource_id else 'N/A'}...")
-                                    elif source_type == 'article':
-                                        article_count += 1
-                                        logger.debug(f"    [{article_count}] {title}")
-                                        logger.debug(f"        Type: Article | Chunks: {chunks} | ID: {resource_id[:12] if resource_id else 'N/A'}...")
-                except Exception as e:
-                    logger.warning(f"Could not get detailed resource information: {e}")
         else:
             logger.debug(f"✗ Error connecting to vectorstore: {stats.get('error', 'Unknown error')}")
             if stats.get('error'):
@@ -295,6 +217,8 @@ class ClutchAIAgent:
             # Ensure required keys exist with defaults
             if 'system_prompt' not in config:
                 config['system_prompt'] = 'You are a helpful assistant for a Yahoo Fantasy Sports league manager.'
+            if 'max_tokens' not in config:
+                config['max_tokens'] = 150000
             
             return config
         except Exception as e:
@@ -399,6 +323,13 @@ class ClutchAIAgent:
         except Exception as e:
             logger.warning(f"Rotowire RSS tools not available: {e}")
         
+        # Basic utility tools (date/time)
+        try:
+            basic_tool = BasicTool(debug=self.debug)
+            tools.extend(basic_tool.get_all_tools())
+        except Exception as e:
+            logger.warning(f"Basic tools not available: {e}")
+        
         # RAG retrieval tool (for podcast/article context)
         try:
             @tool
@@ -454,7 +385,106 @@ class ClutchAIAgent:
         inputs = {"messages": [("user", query)], **kwargs}
         return self.agent.invoke(inputs)
     
-    def chat(self, query: str, conversation_history: Optional[list] = None) -> str:
+    def _estimate_tokens(self, text: str, model: str = "gpt-4o-mini") -> int:
+        """
+        Estimate the number of tokens in a text string.
+        
+        Args:
+            text: Text to count tokens for
+            model: Model name to use for tokenization
+            
+        Returns:
+            Estimated token count
+        """
+        try:
+            # Get encoding for the model
+            encoding = tiktoken.encoding_for_model(model)
+            return len(encoding.encode(text))
+        except KeyError:
+            # Fallback to cl100k_base encoding (used by gpt-4, gpt-3.5-turbo)
+            encoding = tiktoken.get_encoding("cl100k_base")
+            return len(encoding.encode(text))
+    
+    def _truncate_history_by_tokens(
+        self, 
+        conversation_history: list, 
+        max_tokens: int,
+        current_query: str,
+        safety_margin: int = 10000
+    ) -> list:
+        """
+        Truncate conversation history to stay within token limits.
+        
+        Args:
+            conversation_history: List of message dicts
+            max_tokens: Maximum tokens allowed (including current query)
+            current_query: The current user query
+            safety_margin: Safety margin to leave for response tokens
+            
+        Returns:
+            Truncated conversation history
+        """
+        # Estimate tokens for current query
+        query_tokens = self._estimate_tokens(current_query)
+        available_tokens = max_tokens - query_tokens - safety_margin
+        
+        if available_tokens <= 0:
+            logger.warning(f"Current query alone ({query_tokens} tokens) exceeds available budget. Using empty history.")
+            return []
+        
+        # Build messages and count tokens
+        truncated_history = []
+        total_tokens = 0
+        
+        # Process messages in reverse (most recent first) to keep recent context
+        for msg in reversed(conversation_history):
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            
+            if role not in ("user", "assistant"):
+                continue
+            
+            # Estimate tokens for this message (format: "role: content")
+            message_text = f"{role}: {content}"
+            message_tokens = self._estimate_tokens(message_text)
+            
+            # If adding this message would exceed the limit, stop
+            if total_tokens + message_tokens > available_tokens:
+                logger.debug(
+                    f"Truncating history: {len(truncated_history)} messages, "
+                    f"{total_tokens} tokens (limit: {available_tokens})"
+                )
+                break
+            
+            # Add to beginning (since we're processing in reverse)
+            truncated_history.insert(0, msg)
+            total_tokens += message_tokens
+        
+        # If we have space and there's a first message (greeting), try to keep it
+        if truncated_history and len(truncated_history) < len(conversation_history):
+            first_msg = conversation_history[0]
+            if first_msg not in truncated_history:
+                first_msg_text = f"{first_msg.get('role', 'user')}: {first_msg.get('content', '')}"
+                first_msg_tokens = self._estimate_tokens(first_msg_text)
+                
+                # If we can fit the first message, add it
+                if total_tokens + first_msg_tokens <= available_tokens:
+                    truncated_history.insert(0, first_msg)
+                    total_tokens += first_msg_tokens
+        
+        logger.debug(
+            f"History truncation: {len(conversation_history)} -> {len(truncated_history)} messages, "
+            f"~{total_tokens} tokens (query: {query_tokens} tokens, limit: {max_tokens})"
+        )
+        
+        return truncated_history
+    
+    def chat(
+        self, 
+        query: str, 
+        conversation_history: Optional[list] = None, 
+        max_history_messages: int = 20
+    ) -> str:
         """
         Chat with the agent, supporting conversation history.
         
@@ -462,6 +492,8 @@ class ClutchAIAgent:
             query: User query/question
             conversation_history: List of message dicts with 'role' and 'content' keys
                                  (e.g., [{"role": "user", "content": "..."}, ...])
+            max_history_messages: Maximum number of messages to include in history (default: 20)
+                                  Used as a fallback if token counting fails
             
         Returns:
             Agent response as a string
@@ -469,7 +501,23 @@ class ClutchAIAgent:
         # Build messages list from conversation history if provided
         messages = []
         if conversation_history:
-            for msg in conversation_history:
+            # Truncate history based on token count (more accurate than message count)
+            # Use max_tokens from config
+            try:
+                truncated_history = self._truncate_history_by_tokens(
+                    conversation_history, 
+                    max_tokens=self.max_tokens,
+                    current_query=query
+                )
+            except Exception as e:
+                logger.warning(f"Error truncating by tokens, falling back to message count: {e}")
+                # Fallback to message count limit
+                if len(conversation_history) > max_history_messages:
+                    truncated_history = [conversation_history[0]] + conversation_history[-max_history_messages+1:]
+                else:
+                    truncated_history = conversation_history
+            
+            for msg in truncated_history:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
                 if role in ("user", "assistant"):
@@ -478,7 +526,7 @@ class ClutchAIAgent:
         # Add the current query
         messages.append(("user", query))
         
-        # Invoke agent with full conversation history
+        # Invoke agent with conversation history
         inputs = {"messages": messages}
         response = self.agent.invoke(inputs)
         

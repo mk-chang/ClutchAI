@@ -1,7 +1,12 @@
 # Streamlit App Configuration
 # Configure which agent system to use
 
-agent_type: "single"  # Options: "single" or "multi"
+agent_type: "multi"  # Options: "single" or "multi"
 # "single" - Uses the single ClutchAIAgent (ReACT framework)
 # "multi" - Uses the multi-agent system (Supervisor → Research → Analysis)
+
+# Conversation history management
+# Token-aware truncation is now used to prevent rate limit errors
+# max_tokens is configured per agent in agent_config.yaml and multiagent_config.yaml
+max_history_messages: 20  # Fallback: Maximum number of messages (used if token counting fails)
 

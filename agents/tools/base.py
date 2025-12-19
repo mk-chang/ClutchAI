@@ -130,11 +130,10 @@ class FirecrawlTool(ClutchAITool):
         self.app = Firecrawl(api_key=self.api_key)
         
         # Log version information in debug mode
-        if debug:
-            version_str = f" (version {FIRECRAWL_VERSION})" if FIRECRAWL_VERSION else ""
-            logger.debug(f"Firecrawl initialized{version_str}")
-            if FIRECRAWL_VERSION is None:
-                logger.debug("Note: Could not detect Firecrawl package version")
+        version_str = f" (version {FIRECRAWL_VERSION})" if FIRECRAWL_VERSION else ""
+        logger.debug(f"Firecrawl initialized{version_str}")
+        if FIRECRAWL_VERSION is None:
+            logger.debug("Note: Could not detect Firecrawl package version")
     
     def _format_response(self, data) -> str:
         """
