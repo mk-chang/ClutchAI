@@ -35,8 +35,8 @@ langchain-postgres
 psycopg2-binary
 cloud-sql-python-connector[pg8000,psycopg2]
 
-# Streamlit Web App
-streamlit
+# Streamlit Web App (match demo-ai-assistant version)
+streamlit>=1.49.0
 
 # Testing
 pytest
