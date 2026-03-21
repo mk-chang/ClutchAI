@@ -2,8 +2,6 @@
 
 This folder is maintained by Claude Code. It contains working knowledge about the ClutchAI project that goes beyond what's in the source code — deployment state, known quirks, environment details, lessons learned.
 
-**This folder is gitignored and exists only on the local machine.**
-
 ## Contents
 
 - `cloud/gcp.md` — GCP project config, Cloud Run deployment notes, Secret Manager, Cloud SQL
