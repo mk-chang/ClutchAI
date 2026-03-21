@@ -24,14 +24,14 @@ class UserContextGatherer:
     
     def __init__(
         self,
-        query: YahooFantasySportsQuery,
+        query: Optional[YahooFantasySportsQuery] = None,
         team_name: Optional[str] = None
     ):
         """
         Initialize the UserContextGatherer.
         
         Args:
-            query: YahooFantasySportsQuery instance for API access
+            query: YahooFantasySportsQuery instance for API access (None if Yahoo OAuth unavailable, e.g. headless)
             team_name: Name of the user's team (optional)
         """
         self.query = query
@@ -62,7 +62,14 @@ class UserContextGatherer:
             # Gather each section of context
             self._add_current_date_time()
             
-            if self.team_name:
+            if self.query is None:
+                self.context_parts.append("=== YAHOO FANTASY ===")
+                self.context_parts.append(
+                    "Yahoo Fantasy: Not available (OAuth not completed for this environment). "
+                    "Complete OAuth once with this app's redirect URI and add token secrets to run with Yahoo data."
+                )
+                self.context_parts.append("")
+            elif self.team_name:
                 if self._find_matching_team():
                     self._add_team_info()
                     self._add_league_info()

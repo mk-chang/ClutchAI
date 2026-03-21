@@ -98,17 +98,25 @@ class MultiAgentSystem:
             disable_rag = os.environ.get("DISABLE_RAG", "").lower() in ("1", "true", "yes")
         self.disable_rag = disable_rag
         
-        # Initialize Yahoo Fantasy query
-        self.query = YahooFantasySportsQuery(
-            league_id=self.yahoo_league_id,
-            game_code=self.game_code,
-            game_id=self.game_id,
-            yahoo_consumer_key=self.yahoo_client_id,
-            yahoo_consumer_secret=self.yahoo_client_secret,
-            env_var_fallback=True,
-            env_file_location=self.env_file_location,
-            save_token_data_to_env_file=True,
-        )
+        # Initialize Yahoo Fantasy query (may fail in headless env if OAuth tokens not pre-saved)
+        try:
+            self.query = YahooFantasySportsQuery(
+                league_id=self.yahoo_league_id,
+                game_code=self.game_code,
+                game_id=self.game_id,
+                yahoo_consumer_key=self.yahoo_client_id,
+                yahoo_consumer_secret=self.yahoo_client_secret,
+                env_var_fallback=True,
+                env_file_location=self.env_file_location,
+                save_token_data_to_env_file=True,
+            )
+        except EOFError:
+            # yahoo_oauth calls input() when tokens missing; no stdin on Cloud Run / headless
+            self.query = None
+            logger.warning(
+                "Yahoo Fantasy OAuth not available (EOF when reading a line). "
+                "Run OAuth once with YAHOO_REDIRECT_URI for this environment and add token secrets."
+            )
         
         # Initialize RAG manager (skip if disable_rag for local runs without GCP credentials)
         self.table_name = table_name or get_default_table_name()
