@@ -162,3 +162,6 @@ qdrant_data/
 pinecone_data/
 weaviate_data/
 *chroma_db/
+
+# Claude Code personal setup (not pushed to git)
+.claude/
