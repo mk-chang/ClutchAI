@@ -4,6 +4,15 @@ _Running log of non-obvious decisions, debugging findings, and things to remembe
 
 ---
 
+## 2026-03-25
+
+- Agent init is slow because `UserContextGatherer.gather()` makes sequential Yahoo API calls on every new session — parallelizing with `ThreadPoolExecutor` should cut ~60-70%
+- Cloud Run likely scales to zero — `min-instances=1` in deploy config will eliminate cold starts
+- `stream()` method exists on all agents but `chat()` in `multi_agent_system.py` doesn't use it — easy streaming win
+- Research agents in supervisor are called sequentially — can be parallelized
+
+---
+
 ## 2026-03-21
 
 - `DISABLE_RAG=true` in `.env` lets you run locally without GCP/Cloud SQL — Yahoo, stats, news, and RSS still work
