@@ -30,10 +30,9 @@ requests
 firecrawl-py
 feedparser
 
-# Vector Database - PostgreSQL with pgvector (Google Cloud SQL)
+# Vector Database - PostgreSQL with pgvector
 langchain-postgres
 psycopg2-binary
-cloud-sql-python-connector[pg8000,psycopg2]
 
 # Streamlit Web App (match demo-ai-assistant version)
 streamlit>=1.49.0
@@ -42,3 +41,6 @@ streamlit>=1.49.0
 pytest
 pytest-cov
 pytest-mock
+
+# Railway deployment
+railway
