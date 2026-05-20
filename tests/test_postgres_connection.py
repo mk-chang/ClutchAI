@@ -22,6 +22,13 @@ def test_accepts_explicit_database_url(monkeypatch):
     conn.close()
 
 
+def test_rewrites_postgresql_url_to_psycopg2(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/testdb')
+    conn = PostgresConnection()
+    assert 'psycopg2' in str(conn.get_engine().url)
+    conn.close()
+
+
 def test_context_manager(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/testdb')
     with PostgresConnection() as conn:
