@@ -16,41 +16,41 @@ logger = get_logger(__name__)
 def get_default_table_name() -> str:
     """
     Get the default vector table name from environment variables.
-    
+
     Returns:
         Vector table name to use
-        
+
     Raises:
-        ValueError: If CLOUDSQL_VECTOR_TABLE is not set
+        ValueError: If VECTOR_TABLE is not set
     """
     # Check for explicit table name
-    table_name = os.environ.get('CLOUDSQL_VECTOR_TABLE')
+    table_name = os.environ.get('VECTOR_TABLE')
     if table_name:
         return table_name
-    
+
     # Require explicit table name - no fallback
     raise ValueError(
         "Vector table name is required. "
-        "Set CLOUDSQL_VECTOR_TABLE environment variable to specify the table name."
+        "Set VECTOR_TABLE environment variable to specify the table name."
     )
 
 
 def get_app_table_name() -> str:
     """
     Get the app table name from environment variables.
-    
+
     Priority:
-    1. CLOUDSQL_APP_TABLE (if set)
+    1. APP_TABLE (if set)
     2. "clutchai_app" (default fallback)
-    
+
     Returns:
         App table name to use
     """
     # Check for explicit table name
-    table_name = os.environ.get('CLOUDSQL_APP_TABLE')
+    table_name = os.environ.get('APP_TABLE')
     if table_name:
         return table_name
-    
+
     # Default fallback
     return "clutchai_app"
 

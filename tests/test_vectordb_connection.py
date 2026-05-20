@@ -20,16 +20,9 @@ from data.cloud_sql.connection import PostgresConnection
 from data.cloud_sql.schema import setup_pgvector_extension, get_table_stats, get_default_table_name
 
 
-# Skip all integration tests if Cloud SQL credentials are not set
 pytestmark = pytest.mark.skipif(
-    not all([
-        os.environ.get('GOOGLE_CLOUD_PROJECT'),
-        os.environ.get('CLOUDSQL_REGION'),
-        os.environ.get('CLOUDSQL_INSTANCE'),
-        os.environ.get('CLOUDSQL_DATABASE'),
-        os.environ.get('CLOUDSQL_USER'),
-    ]),
-    reason="Cloud SQL environment variables not set. Integration tests require GOOGLE_CLOUD_PROJECT, CLOUDSQL_REGION, CLOUDSQL_INSTANCE, CLOUDSQL_DATABASE, and CLOUDSQL_USER."
+    not os.environ.get('DATABASE_URL'),
+    reason="DATABASE_URL not set. Integration tests require a live PostgreSQL connection."
 )
 
 
