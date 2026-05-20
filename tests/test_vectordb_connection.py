@@ -2,12 +2,7 @@
 Integration tests for Cloud SQL vectordb connection.
 
 These tests require:
-- GOOGLE_CLOUD_PROJECT environment variable set
-- CLOUDSQL_REGION environment variable set
-- CLOUDSQL_INSTANCE environment variable set
-- CLOUDSQL_DATABASE environment variable set
-- CLOUDSQL_USER environment variable set
-- Cloud SQL instance accessible and authorized
+- DATABASE_URL environment variable set
 
 Run with: pytest -m integration tests/test_vectordb_connection.py
 """

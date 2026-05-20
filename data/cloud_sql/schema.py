@@ -85,14 +85,14 @@ def setup_pgvector_extension(connection: PostgresConnection) -> bool:
 def setup_schema(connection: PostgresConnection, vector_size: int = 1536, table_name: Optional[str] = None) -> bool:
     """
     Set up pgvector extension and vector table.
-    
+
     DEPRECATED: This function creates a custom table. Use setup_pgvector_extension() instead
     and let PGVector manage its own tables via collection_name.
-    
+
     Args:
         connection: PostgresConnection instance
         vector_size: Dimension of embedding vectors (default: 1536 for OpenAI)
-        table_name: Name of the vector table (defaults to env var CLOUDSQL_VECTOR_TABLE)
+        table_name: Name of the vector table (defaults to env var VECTOR_TABLE)
         
     Returns:
         True if successful, False otherwise
@@ -136,10 +136,10 @@ def create_vector_table(
 ) -> bool:
     """
     Create vector table with pgvector support.
-    
+
     Args:
         connection: PostgresConnection instance
-        table_name: Name of the vector table (defaults to env var CLOUDSQL_VECTOR_TABLE)
+        table_name: Name of the vector table (defaults to env var VECTOR_TABLE)
         vector_dimension: Dimension of embedding vectors (default: 1536 for OpenAI)
         drop_existing: If True, drop existing table before creating
         
@@ -180,12 +180,12 @@ def create_vector_table(
 def get_table_stats(connection: PostgresConnection, table_name: Optional[str] = None) -> dict:
     """
     Get statistics about the PGVector collection.
-    
+
     Queries PGVector's langchain_pg_embedding table for the specified collection.
-    
+
     Args:
         connection: PostgresConnection instance
-        table_name: Collection name (defaults to env var CLOUDSQL_VECTOR_TABLE)
+        table_name: Collection name (defaults to env var VECTOR_TABLE)
         
     Returns:
         Dictionary with collection statistics
