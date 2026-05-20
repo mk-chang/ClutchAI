@@ -4,6 +4,15 @@ _Running log of non-obvious decisions, debugging findings, and things to remembe
 
 ---
 
+## 2026-05-20
+
+- Migrating to Railway: `CLOUDSQL_VECTOR_TABLE` → `VECTOR_TABLE`, `CLOUDSQL_APP_TABLE` → `APP_TABLE` in env vars
+- Railway PostgreSQL injects `DATABASE_URL` automatically — don't set it manually in Railway dashboard
+- `scripts/gcloud/create_database.py` deleted (Railway manages DB creation)
+- `YAHOO_ACCESS_TOKEN_JSON` migration: generate locally via `scripts/gcloud/build_yahoo_token_json.py`, paste JSON blob into Railway env var
+
+---
+
 ## 2026-03-25
 
 - Agent init is slow because `UserContextGatherer.gather()` makes sequential Yahoo API calls on every new session — parallelizing with `ThreadPoolExecutor` should cut ~60-70%

@@ -1,5 +1,7 @@
 # GCP Configuration & Deployment Notes
 
+> **Status:** Being replaced by Railway. GCP still active — do not tear down until Railway is verified (Task 8 of migration plan).
+
 ## Project
 
 | Key | Value |
@@ -20,9 +22,10 @@
 | User | `clutchai_user` |
 | Auth | Password or IAM (password optional if using IAM) |
 
-Connection uses `cloud-sql-python-connector` (pg8000/psycopg2). See `data/cloud_sql/connection.py`.
+~~Connection uses `cloud-sql-python-connector` (pg8000/psycopg2). See `data/cloud_sql/connection.py`.~~
+Connection now uses standard psycopg2 via `DATABASE_URL`. The Cloud SQL Connector has been removed.
 
-## Deployment
+## Deployment (legacy — use Railway going forward)
 
 Deploy from project root:
 ```bash
@@ -38,15 +41,7 @@ Required secrets (must exist before deploy):
 - `CLOUDSQL_PASSWORD`
 - `YAHOO_ACCESS_TOKEN_JSON` — required for Yahoo OAuth on Cloud Run (no interactive login). Generate locally first via normal OAuth flow, then run `scripts/gcloud/build_yahoo_token_json.py`.
 
-Optional secrets (commented out in deploy.sh):
-- `GOOGLE_CLOUD_KEY`, `HASHTAG_BASKETBALL_USERNAME`, `HASHTAG_BASKETBALL_PASSWORD`, `LANGSMITH_API_KEY`, `FIRECRAWL_API_KEY`
-
-### Non-sensitive env vars (set directly in deploy.sh)
-`YAHOO_REDIRECT_URI`, `YAHOO_LEAGUE_ID`, `RUNTIME_ENVIRONMENT=docker`, `GOOGLE_CLOUD_PROJECT`, `CLOUDSQL_*`, `CLOUDSQL_USER`
-
-## IAM / Access
-Run `./scripts/gcloud/grant_secrets_access.sh` to grant Cloud Run service account access to secrets. Only needed once or when adding new secrets.
-
 ## Notes
 - `RUNTIME_ENVIRONMENT=docker` tells yfpy not to open a browser for OAuth (uses token JSON instead)
 - `DISABLE_RAG=true` in `.env` skips Cloud SQL for local dev without GCP credentials
+- GCP teardown: `gcloud run services delete clutchai --region us-central1` — only after Railway is verified
