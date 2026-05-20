@@ -18,4 +18,4 @@ EXPOSE 8080
 ENV STREAMLIT_SERVER_PORT=8080
 
 # Cloud Run uses port 8080 by default
-CMD ["streamlit", "run", "app/streamlit_app.py", "--server.address", "0.0.0.0", "--server.port", "8080"]
+CMD ["sh", "-c", "streamlit run app/streamlit_app.py --server.address 0.0.0.0 --server.port ${PORT:-8080}"]
