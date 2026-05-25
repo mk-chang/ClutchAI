@@ -87,6 +87,8 @@ def main():
     # Pipeline-specific settings from vector_config.yaml
     youtube_config = vector_config.get('youtube_channel', {})
     max_videos_added = youtube_config.get('max_videos_added', 10)
+    if os.environ.get('DEV_MODE', 'false').lower() == 'true':
+        max_videos_added = 3
     delay_between_videos = youtube_config.get('delay_between_videos', 12.0)
     
     # Chunk size from rag_config.yaml (source of truth for consistency)
