@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple
 from abc import ABC, abstractmethod
 
+from openai import OpenAI
 from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
 from langchain_postgres import PGVector
@@ -238,17 +239,58 @@ class BaseVectorManager(ABC):
     def _add_documents_to_vectorstore(self, docs: List[Document]) -> None:
         """
         Add documents to the PostgreSQL vectorstore using PGVector.
-        
+
         Args:
             docs: List of Document objects to add
         """
         if not docs:
             return
-        
+
         # PGVector handles embeddings automatically
         # Just add documents - embeddings will be generated automatically
         self.vectorstore.add_documents(docs)
-    
+
+    def _clean_documents(self, docs: List[Document]) -> List[Document]:
+        if not docs:
+            return docs
+
+        numbered = "\n".join(
+            f"[{i}] {doc.page_content.strip()}"
+            for i, doc in enumerate(docs)
+        )
+        prompt = (
+            "You are filtering a fantasy basketball video/podcast transcript. "
+            "Identify chunk indices that contain: advertisements, sponsor reads, "
+            "promo codes, show introductions, outros, social media promotions, "
+            "calls to subscribe/follow/review, or any filler unrelated to basketball analysis. "
+            "Return ONLY a JSON object with key 'remove' containing a list of integer indices. "
+            "Do NOT remove any basketball analysis, player discussion, trade talk, "
+            "injury news, or statistical analysis. "
+            "If nothing should be removed, return {\"remove\": []}.\n\n"
+            f"Chunks:\n{numbered}"
+        )
+
+        try:
+            import json as _json
+            client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                response_format={"type": "json_object"},
+            )
+            result = _json.loads(response.choices[0].message.content)
+            indices_to_remove = set(result.get("remove", []))
+            kept = [doc for i, doc in enumerate(docs) if i not in indices_to_remove]
+            removed = len(docs) - len(kept)
+            if removed:
+                logger.info(f"  Cleaned transcript: removed {removed} non-content chunks "
+                            f"({len(kept)}/{len(docs)} kept)")
+            return kept
+        except Exception as e:
+            logger.warning(f"  Transcript cleaning failed ({e}), using raw chunks")
+            return docs
+
     @abstractmethod
     def load_resources_from_yaml(self, vectordata_yaml: Optional[Path] = None) -> List[Tuple[str, YouTubeVideo]]:
         """
