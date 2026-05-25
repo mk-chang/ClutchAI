@@ -70,6 +70,7 @@ class YoutubeVectorManager(BaseVectorManager):
         self.chunk_size_seconds = chunk_size_seconds
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self._youtube_blocked = False  # circuit breaker: skip retries once blocked
     
     def _fetch_video_metadata_from_api(
         self, 
@@ -284,10 +285,13 @@ class YoutubeVectorManager(BaseVectorManager):
         chunk_size = chunk_size_seconds if chunk_size_seconds is not None else self.chunk_size_seconds
         
         # Try YoutubeLoader with exponential backoff for IP blocking errors
+        # Skip YouTube entirely if circuit breaker is open (previously blocked this session)
         docs = None
         last_exception = None
-        last_is_ip_block = False
-        for attempt in range(self.max_retries + 1):
+        last_is_ip_block = self._youtube_blocked
+        if self._youtube_blocked:
+            logger.info("  ⚡ Circuit breaker open — skipping YouTube, going straight to Supadata")
+        for attempt in range(0 if self._youtube_blocked else self.max_retries + 1):
             try:
                 loader = YoutubeLoader.from_youtube_url(
                     url_normalized,
@@ -320,7 +324,9 @@ class YoutubeVectorManager(BaseVectorManager):
         # Supadata fallback when YouTube blocks all retries
         if docs is None and last_is_ip_block:
             video_id_for_fallback = resource_id or extract_youtube_video_id(url_normalized)
-            logger.warning(f"  YouTube blocked after {self.max_retries + 1} attempts. Trying Supadata fallback...")
+            if not self._youtube_blocked:
+                logger.warning(f"  YouTube blocked after {self.max_retries + 1} attempts. Trying Supadata fallback...")
+                self._youtube_blocked = True  # open circuit breaker for remaining videos
             try:
                 docs = self._fetch_transcript_supadata(video_id_for_fallback, chunk_size)
                 logger.info(f"  ✓ Supadata fallback succeeded ({len(docs)} chunks)")

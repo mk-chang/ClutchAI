@@ -4,10 +4,12 @@
 youtube_channel:
   # Maximum number of videos to add per run (stops after N videos are successfully added)
   # Set to null or omit to add all videos
-  max_videos_added: 5
-  
+  # Initial population: 15 stays under YouTube's block threshold (~17 videos)
+  # Weekly cron: 15 is also fine since only ~5-10 new videos appear per week
+  max_videos_added: 15
+
   # Delay between videos in seconds (to avoid rate limiting)
-  delay_between_videos: 12.0
+  delay_between_videos: 15.0
   
   # Note: chunk_size_seconds is defined in config/rag_config.yaml
   # This script will use that value to maintain consistency across the codebase
