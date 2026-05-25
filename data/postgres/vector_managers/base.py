@@ -254,6 +254,15 @@ class BaseVectorManager(ABC):
         """Shared LLM mechanics for transcript/article cleaning. Subclasses call this from _clean_documents."""
         if not docs:
             return docs
+
+        dev_mode = os.environ.get('DEV_MODE', 'false').lower() == 'true'
+
+        if dev_mode:
+            logger.info(f"  [DEV] Before cleaning — {len(docs)} chunks. First 3 samples:")
+            for i, doc in enumerate(docs[:3]):
+                preview = doc.page_content.strip()[:150].replace('\n', ' ')
+                logger.info(f"    [{i}] {preview}")
+
         try:
             import json as _json
             client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
@@ -267,6 +276,16 @@ class BaseVectorManager(ABC):
             indices_to_remove = set(result.get("remove", []))
             kept = [doc for i, doc in enumerate(docs) if i not in indices_to_remove]
             removed = len(docs) - len(kept)
+
+            if dev_mode:
+                if indices_to_remove:
+                    logger.info(f"  [DEV] Removed {removed} chunk(s):")
+                    for idx in sorted(indices_to_remove):
+                        preview = docs[idx].page_content.strip()[:150].replace('\n', ' ')
+                        logger.info(f"    [-{idx}] {preview}")
+                else:
+                    logger.info(f"  [DEV] Nothing removed — all {len(docs)} chunks kept")
+
             if removed:
                 logger.info(f"  Cleaned content: removed {removed} non-content chunks "
                             f"({len(kept)}/{len(docs)} kept)")
