@@ -141,6 +141,67 @@ class YoutubeVectorManager(BaseVectorManager):
             # API error or other issue - fail silently and return None
             return None
     
+    def _fetch_transcript_supadata(self, video_id: str, chunk_size_seconds: int) -> List[Document]:
+        """Fetch transcript from Supadata API and chunk into Documents matching YoutubeLoader format."""
+        import requests
+
+        api_key = os.environ.get('SUPADATA_API_KEY')
+        if not api_key:
+            raise ValueError("SUPADATA_API_KEY not set — cannot use Supadata fallback")
+
+        response = requests.get(
+            'https://api.supadata.ai/v1/youtube/transcript',
+            params={'videoId': video_id},
+            headers={'x-api-key': api_key},
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        segments = data.get('content', [])
+        if not segments:
+            raise ValueError(f"Supadata returned no transcript for video {video_id}")
+
+        # Group segments into chunk_size_seconds chunks (offset is in milliseconds)
+        docs = []
+        chunk_text: List[str] = []
+        chunk_start_ms = segments[0].get('offset', 0)
+
+        for segment in segments:
+            offset_ms = segment.get('offset', 0)
+            text = segment.get('text', '').strip()
+            if not text:
+                continue
+
+            elapsed_seconds = (offset_ms - chunk_start_ms) / 1000
+            if elapsed_seconds >= chunk_size_seconds and chunk_text:
+                start_sec = chunk_start_ms / 1000
+                docs.append(Document(
+                    page_content=' '.join(chunk_text),
+                    metadata={
+                        'source': f"https://www.youtube.com/watch?v={video_id}&t={int(start_sec)}s",
+                        'start_seconds': start_sec,
+                        'start_timestamp': self._format_timestamp(start_sec),
+                    }
+                ))
+                chunk_text = [text]
+                chunk_start_ms = offset_ms
+            else:
+                chunk_text.append(text)
+
+        if chunk_text:
+            start_sec = chunk_start_ms / 1000
+            docs.append(Document(
+                page_content=' '.join(chunk_text),
+                metadata={
+                    'source': f"https://www.youtube.com/watch?v={video_id}&t={int(start_sec)}s",
+                    'start_seconds': start_sec,
+                    'start_timestamp': self._format_timestamp(start_sec),
+                }
+            ))
+
+        return docs
+
     def load_resources_from_yaml(self, vectordata_yaml: Optional[Path] = None) -> List[Tuple[str, YouTubeVideo]]:
         """
         Load videos/resources from YAML file.
@@ -222,9 +283,10 @@ class YoutubeVectorManager(BaseVectorManager):
         # Use instance default if not provided
         chunk_size = chunk_size_seconds if chunk_size_seconds is not None else self.chunk_size_seconds
         
-        # Retry logic with exponential backoff for IP blocking errors
-        # Option 1: Wait and retry - YouTube IP blocks are often temporary
+        # Try YoutubeLoader with exponential backoff for IP blocking errors
+        docs = None
         last_exception = None
+        last_is_ip_block = False
         for attempt in range(self.max_retries + 1):
             try:
                 loader = YoutubeLoader.from_youtube_url(
@@ -238,26 +300,36 @@ class YoutubeVectorManager(BaseVectorManager):
             except Exception as e:
                 last_exception = e
                 error_msg = str(e).lower()
-                
-                # Check if it's an IP blocking error
-                is_ip_block = (
-                    'blocking' in error_msg or 
-                    'blocked' in error_msg or 
-                    'ip' in error_msg or
-                    'too many requests' in error_msg
+                last_is_ip_block = (
+                    'blocking' in error_msg or
+                    'blocked' in error_msg or
+                    'ip address' in error_msg or
+                    'too many requests' in error_msg or
+                    'rate limit' in error_msg or
+                    '429' in error_msg
                 )
-                
-                if attempt < self.max_retries and is_ip_block:
-                    # Exponential backoff: delay doubles with each retry
+
+                if attempt < self.max_retries and last_is_ip_block:
                     delay = self.retry_delay * (2 ** attempt)
                     logger.warning(f"  ⚠️  YouTube IP blocking detected. Waiting {delay:.1f} seconds before retry... (attempt {attempt + 1}/{self.max_retries + 1})")
                     time.sleep(delay)
-                    continue
-                else:
-                    # Not a retryable error or max retries reached
+                elif not last_is_ip_block:
                     raise ValueError(f"Failed to load transcript from {url}: {e}") from e
-        
-        # If we get here, docs should be loaded successfully
+                # IP block + max retries exhausted: fall through to Supadata
+
+        # Supadata fallback when YouTube blocks all retries
+        if docs is None and last_is_ip_block:
+            video_id_for_fallback = resource_id or extract_youtube_video_id(url_normalized)
+            logger.warning(f"  YouTube blocked after {self.max_retries + 1} attempts. Trying Supadata fallback...")
+            try:
+                docs = self._fetch_transcript_supadata(video_id_for_fallback, chunk_size)
+                logger.info(f"  ✓ Supadata fallback succeeded ({len(docs)} chunks)")
+            except Exception as supadata_err:
+                logger.error(f"  ✗ Supadata fallback failed: {supadata_err}")
+
+        if docs is None:
+            raise ValueError(f"Failed to load transcript from {url}: {last_exception}") from last_exception
+
         # Auto-extract resource_id if not provided
         if not resource_id:
             resource_id = extract_youtube_video_id(url)
