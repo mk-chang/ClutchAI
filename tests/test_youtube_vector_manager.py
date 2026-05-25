@@ -98,3 +98,50 @@ class TestCleanDocuments:
             clean = manager._clean_documents(docs)
         assert clean[0].metadata["resource_id"] == "abc123"
         assert clean[0].metadata["title"] == "Episode 1"
+
+
+class TestLoadResourceContentCleaning:
+
+    def test_clean_documents_called_after_fetch(self, manager):
+        """_clean_documents must be called before metadata enhancement."""
+        raw_docs = [
+            Document(page_content="Use promo code LOCKED!", metadata={"source": "http://yt.com?t=0s"}),
+            Document(page_content="Jokic analysis today.", metadata={"source": "http://yt.com?t=30s"}),
+        ]
+        clean_docs = [raw_docs[1]]  # ad chunk removed
+
+        with patch('data.postgres.vector_managers.youtube.YoutubeLoader') as mock_loader_cls, \
+             patch.object(manager, '_clean_documents', return_value=clean_docs) as mock_clean, \
+             patch.object(manager, '_fetch_video_metadata_from_api', return_value=None):
+            mock_loader_cls.from_youtube_url.return_value.load.return_value = raw_docs
+            docs = manager.load_resource_content(
+                url="https://www.youtube.com/watch?v=test123",
+                source_type="youtube",
+                title="Test Video",
+                resource_id="test123",
+            )
+
+        mock_clean.assert_called_once_with(raw_docs)
+        assert len(docs) == 1
+        assert "Jokic analysis" in docs[0].page_content
+
+    def test_metadata_applied_to_cleaned_docs_only(self, manager):
+        """Metadata enhancement runs on the post-clean doc list."""
+        raw_docs = [
+            Document(page_content="Ad chunk.", metadata={"source": "http://yt.com?t=0s"}),
+            Document(page_content="Good content.", metadata={"source": "http://yt.com?t=30s"}),
+        ]
+        with patch('data.postgres.vector_managers.youtube.YoutubeLoader') as mock_loader_cls, \
+             patch.object(manager, '_clean_documents', return_value=[raw_docs[1]]), \
+             patch.object(manager, '_fetch_video_metadata_from_api', return_value=None):
+            mock_loader_cls.from_youtube_url.return_value.load.return_value = raw_docs
+            docs = manager.load_resource_content(
+                url="https://www.youtube.com/watch?v=test123",
+                source_type="youtube",
+                title="My Video",
+                resource_id="test123",
+            )
+
+        assert len(docs) == 1
+        assert docs[0].metadata.get("title") == "My Video"
+        assert docs[0].metadata.get("source_type") == "youtube"

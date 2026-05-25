@@ -336,6 +336,9 @@ class YoutubeVectorManager(BaseVectorManager):
         if docs is None:
             raise ValueError(f"Failed to load transcript from {url}: {last_exception}") from last_exception
 
+        # Clean transcript: remove ads, intros, outros, social plugs
+        docs = self._clean_documents(docs)
+
         # Auto-extract resource_id if not provided
         if not resource_id:
             resource_id = extract_youtube_video_id(url)
