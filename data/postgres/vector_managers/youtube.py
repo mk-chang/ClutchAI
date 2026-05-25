@@ -203,6 +203,23 @@ class YoutubeVectorManager(BaseVectorManager):
 
         return docs
 
+    def _clean_documents(self, docs: List[Document]) -> List[Document]:
+        if not docs:
+            return docs
+        numbered = "\n".join(f"[{i}] {doc.page_content.strip()}" for i, doc in enumerate(docs))
+        prompt = (
+            "You are filtering a fantasy basketball video/podcast transcript. "
+            "Identify chunk indices that contain: advertisements, sponsor reads, "
+            "promo codes, show introductions, outros, social media promotions, "
+            "calls to subscribe/follow/review, or any filler unrelated to basketball analysis. "
+            "Return ONLY a JSON object with key 'remove' containing a list of integer indices. "
+            "Do NOT remove any basketball analysis, player discussion, trade talk, "
+            "injury news, or statistical analysis. "
+            "If nothing should be removed, return {\"remove\": []}.\n\n"
+            f"Chunks:\n{numbered}"
+        )
+        return self._run_cleaning(docs, prompt)
+
     def load_resources_from_yaml(self, vectordata_yaml: Optional[Path] = None) -> List[Tuple[str, YouTubeVideo]]:
         """
         Load videos/resources from YAML file.

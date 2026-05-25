@@ -250,31 +250,15 @@ class BaseVectorManager(ABC):
         # Just add documents - embeddings will be generated automatically
         self.vectorstore.add_documents(docs)
 
-    def _clean_documents(self, docs: List[Document]) -> List[Document]:
+    def _run_cleaning(self, docs: List[Document], prompt: str, model: str = "gpt-4o-mini") -> List[Document]:
+        """Shared LLM mechanics for transcript/article cleaning. Subclasses call this from _clean_documents."""
         if not docs:
             return docs
-
-        numbered = "\n".join(
-            f"[{i}] {doc.page_content.strip()}"
-            for i, doc in enumerate(docs)
-        )
-        prompt = (
-            "You are filtering a fantasy basketball video/podcast transcript. "
-            "Identify chunk indices that contain: advertisements, sponsor reads, "
-            "promo codes, show introductions, outros, social media promotions, "
-            "calls to subscribe/follow/review, or any filler unrelated to basketball analysis. "
-            "Return ONLY a JSON object with key 'remove' containing a list of integer indices. "
-            "Do NOT remove any basketball analysis, player discussion, trade talk, "
-            "injury news, or statistical analysis. "
-            "If nothing should be removed, return {\"remove\": []}.\n\n"
-            f"Chunks:\n{numbered}"
-        )
-
         try:
             import json as _json
             client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 response_format={"type": "json_object"},
@@ -284,12 +268,17 @@ class BaseVectorManager(ABC):
             kept = [doc for i, doc in enumerate(docs) if i not in indices_to_remove]
             removed = len(docs) - len(kept)
             if removed:
-                logger.info(f"  Cleaned transcript: removed {removed} non-content chunks "
+                logger.info(f"  Cleaned content: removed {removed} non-content chunks "
                             f"({len(kept)}/{len(docs)} kept)")
             return kept
         except Exception as e:
-            logger.warning(f"  Transcript cleaning failed ({e}), using raw chunks")
+            logger.warning(f"  Content cleaning failed ({e}), using raw chunks")
             return docs
+
+    @abstractmethod
+    def _clean_documents(self, docs: List[Document]) -> List[Document]:
+        """Filter out non-content chunks (ads, intros, outros, etc.) before vectorstore ingestion."""
+        pass
 
     @abstractmethod
     def load_resources_from_yaml(self, vectordata_yaml: Optional[Path] = None) -> List[Tuple[str, YouTubeVideo]]:

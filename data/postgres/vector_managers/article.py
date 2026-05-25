@@ -111,6 +111,23 @@ class ArticleVectorManager(BaseVectorManager):
         normalized = super().normalize_url(url)
         return normalized.rstrip('/')
     
+    def _clean_documents(self, docs: List[Document]) -> List[Document]:
+        if not docs:
+            return docs
+        numbered = "\n".join(f"[{i}] {doc.page_content.strip()}" for i, doc in enumerate(docs))
+        prompt = (
+            "You are filtering fantasy basketball article content. "
+            "Identify chunk indices that contain: site navigation, cookie notices, "
+            "newsletter signup prompts, subscription paywalls, author bios, related articles lists, "
+            "advertisement copy, or any boilerplate unrelated to basketball analysis. "
+            "Return ONLY a JSON object with key 'remove' containing a list of integer indices. "
+            "Do NOT remove any basketball analysis, player discussion, trade talk, "
+            "injury news, statistical analysis, or editorial commentary. "
+            "If nothing should be removed, return {\"remove\": []}.\n\n"
+            f"Chunks:\n{numbered}"
+        )
+        return self._run_cleaning(docs, prompt)
+
     def load_resources_from_yaml(self, vectordata_yaml: Optional[Path] = None) -> List[Tuple[str, YouTubeVideo]]:
         """
         Load articles from YAML file.
@@ -315,7 +332,10 @@ class ArticleVectorManager(BaseVectorManager):
         
         # Split document into chunks
         docs = self.text_splitter.split_documents([initial_doc])
-        
+
+        # Clean chunks: remove nav, cookie notices, newsletter prompts, boilerplate
+        docs = self._clean_documents(docs)
+
         # Enhance metadata for all chunks
         for doc in docs:
             doc.metadata['source_type'] = source_type
