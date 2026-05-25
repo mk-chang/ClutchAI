@@ -2,21 +2,26 @@
 
 _Update this at the end of each session with what to tackle next._
 
+## Current State
+
+Railway migration is **complete**. App is live and working with RAG enabled.
+
+- Production URL: `https://clutchai-production.up.railway.app`
+- Cron job (`lockedon-cron`) running hourly — populating 655-video LockedOn backlog (~15 videos/run, ~44 hrs total)
+- `main` branch is the deploy branch for all Railway services
+
 ## Next Steps
 
-Railway migration in progress — code changes done (Tasks 1–4), infra setup remains.
-
-Plan: `docs/superpowers/plans/2026-05-20-railway-migration.md`
-
-1. **Task 5** — Railway project setup (manual):
-   - Create Railway project + PostgreSQL plugin
-   - Enable pgvector extension
-   - Set env vars (see plan for full list — note `VECTOR_TABLE` not `CLOUDSQL_VECTOR_TABLE`)
-   - Connect GitHub repo and deploy
-2. **Task 6** — Populate vectorstore: run `update_base_knowledge.py`, `update_lockedon_knowledge.py`, `update_vector_database.py` against Railway postgres
-3. **Task 7** — Set up Railway cron job for weekly vectorstore updates
-4. **Task 8** — End-to-end verification + GCP teardown
+1. **GCP Console cleanup** (manual):
+   - Cloud SQL `clutchai-db`: disable deletion protection → delete instance
+   - Secret Manager: delete OPENAI_API_KEY, YAHOO_CLIENT_ID, YAHOO_CLIENT_SECRET, CLOUDSQL_PASSWORD, YAHOO_ACCESS_TOKEN_JSON
+   - Artifact Registry: delete Cloud Run build images
+2. **Monitor cron backlog**: Once 655 LockedOn videos are loaded (~44 hrs from now), consider switching cron from hourly (`0 * * * *`) to weekly (`0 3 * * 0`)
+3. **Performance optimizations** (from 2026-03-25 notes):
+   - Parallelize `UserContextGatherer.gather()` Yahoo API calls (ThreadPoolExecutor, ~60-70% speedup)
+   - Parallelize research agents in supervisor
+   - Add streaming (`stream()` method exists but unused in `chat()`)
 
 ## Blockers
 
-- Restart Claude Code session first to activate Railway MCP (installed this session)
+None.

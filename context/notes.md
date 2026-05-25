@@ -4,6 +4,15 @@ _Running log of non-obvious decisions, debugging findings, and things to remembe
 
 ---
 
+## 2026-05-25
+
+- Railway cron `&&` in start command is not interpreted — Railway doesn't wrap in a shell; use `bash -c "cmd1 && cmd2"` or a single Python script
+- GCP Cloud SQL suspended instance can't be patched (HTTP 409) — delete deletion protection via GCP Console, not CLI
+- `update_vector_database.py` path was broken: needed `.parent.parent.parent` (3 levels up from `scripts/pipelines/`), and import was `scripts.vectordb_pipelines` (stale) → `scripts.pipelines`
+- Railway MCP session expires frequently — fix: `railway login` in terminal + VS Code Reload Window
+
+---
+
 ## 2026-05-20
 
 - Migrating to Railway: `CLOUDSQL_VECTOR_TABLE` → `VECTOR_TABLE`, `CLOUDSQL_APP_TABLE` → `APP_TABLE` in env vars
