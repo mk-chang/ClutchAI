@@ -24,8 +24,8 @@ from langchain_core.documents import Document
 from langchain_community.document_loaders import YoutubeLoader
 from langchain_community.document_loaders.youtube import TranscriptFormat
 
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.vector_managers.base import BaseVectorManager
+from data.postgres.connection import PostgresConnection
+from data.postgres.vector_managers.base import BaseVectorManager
 from data.data_class import YouTubeVideo, extract_youtube_video_id
 from logger import get_logger
 

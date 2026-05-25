@@ -16,9 +16,9 @@ def _make_manager(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/testdb')
     monkeypatch.setenv('OPENAI_API_KEY', 'sk-fake')
 
-    with patch('data.cloud_sql.vector_managers.base.PGVector'):
-        from data.cloud_sql.connection import PostgresConnection
-        from data.cloud_sql.vector_managers.youtube import YoutubeVectorManager
+    with patch('data.postgres.vector_managers.base.PGVector'):
+        from data.postgres.connection import PostgresConnection
+        from data.postgres.vector_managers.youtube import YoutubeVectorManager
         from langchain_openai import OpenAIEmbeddings
 
         conn = PostgresConnection()
@@ -150,8 +150,8 @@ def test_supadata_real_api_call(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/testdb')
     monkeypatch.setenv('OPENAI_API_KEY', 'sk-fake')
 
-    from data.cloud_sql.connection import PostgresConnection
-    from data.cloud_sql.vector_managers.youtube import YoutubeVectorManager
+    from data.postgres.connection import PostgresConnection
+    from data.postgres.vector_managers.youtube import YoutubeVectorManager
     from langchain_openai import OpenAIEmbeddings
 
     conn = PostgresConnection()

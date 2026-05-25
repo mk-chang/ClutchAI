@@ -20,8 +20,8 @@ from langchain_postgres import PGVector
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
 
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.schema import get_table_stats, get_default_table_name
+from data.postgres.connection import PostgresConnection
+from data.postgres.schema import get_table_stats, get_default_table_name
 
 
 class RAGManager:
@@ -29,7 +29,7 @@ class RAGManager:
     Manager for RAG operations using PostgreSQL with pgvector.
     
     This class provides read-only access to the vector database for retrieval operations.
-    All data ingestion should be handled by the data pipeline in data/cloud_sql/vector_managers.py.
+    All data ingestion should be handled by the data pipeline in data/postgres/vector_managers.py.
     
     Features:
     - PostgreSQL/pgvector vectorstore integration

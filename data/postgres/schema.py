@@ -7,7 +7,7 @@ Handles pgvector extension setup and vector table creation.
 import os
 from typing import Optional
 from sqlalchemy import text
-from data.cloud_sql.connection import PostgresConnection
+from data.postgres.connection import PostgresConnection
 from logger import get_logger
 
 logger = get_logger(__name__)

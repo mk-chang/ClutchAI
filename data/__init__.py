@@ -4,9 +4,9 @@ Cloud SQL PostgreSQL Data Infrastructure
 This module provides Cloud SQL PostgreSQL connection management and database utilities.
 """
 
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.schema import setup_pgvector_extension, setup_schema, create_vector_table
-from data.cloud_sql.vector_managers import (
+from data.postgres.connection import PostgresConnection
+from data.postgres.schema import setup_pgvector_extension, setup_schema, create_vector_table
+from data.postgres.vector_managers import (
     BaseVectorManager,
     YoutubeVectorManager,
     YoutubeChannelVectorManager,

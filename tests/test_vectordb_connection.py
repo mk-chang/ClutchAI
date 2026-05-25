@@ -11,8 +11,8 @@ import os
 import pytest
 from sqlalchemy import text
 
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.schema import setup_pgvector_extension, get_table_stats, get_default_table_name
+from data.postgres.connection import PostgresConnection
+from data.postgres.schema import setup_pgvector_extension, get_table_stats, get_default_table_name
 
 
 pytestmark = pytest.mark.skipif(

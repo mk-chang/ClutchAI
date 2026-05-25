@@ -16,10 +16,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Add project root to path
-# From scripts/update_vector_database.py
-# .parent = scripts/
-# .parent.parent = project root
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
@@ -31,8 +28,8 @@ load_dotenv(env_path)
 from logger import get_logger, setup_logging
 
 # Import the pipeline scripts
-from scripts.vectordb_pipelines.update_base_knowledge import main as update_base_knowledge
-from scripts.vectordb_pipelines.update_lockedon_knowledge import main as update_lockedon_knowledge
+from scripts.pipelines.update_base_knowledge import main as update_base_knowledge
+from scripts.pipelines.update_lockedon_knowledge import main as update_lockedon_knowledge
 
 # Setup logging
 setup_logging(debug=False)

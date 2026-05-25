@@ -26,8 +26,8 @@ from agents.tools.fantasy_news import FantasyNewsTool
 from agents.tools.dynasty_ranking import DynastyRankingTool
 from agents.tools.rotowire_rss import RotowireRSSFeedTool
 from agents.tools.basic import BasicTool
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.schema import get_default_table_name
+from data.postgres.connection import PostgresConnection
+from data.postgres.schema import get_default_table_name
 
 logger = get_logger(__name__)
 

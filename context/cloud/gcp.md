@@ -22,15 +22,15 @@
 | User | `clutchai_user` |
 | Auth | Password or IAM (password optional if using IAM) |
 
-~~Connection uses `cloud-sql-python-connector` (pg8000/psycopg2). See `data/cloud_sql/connection.py`.~~
+~~Connection uses `cloud-sql-python-connector` (pg8000/psycopg2). See `data/postgres/connection.py`.~~
 Connection now uses standard psycopg2 via `DATABASE_URL`. The Cloud SQL Connector has been removed.
 
 ## Deployment (legacy — use Railway going forward)
 
 Deploy from project root:
 ```bash
-./scripts/gcloud/deploy.sh                  # deploy only
-./scripts/gcloud/deploy.sh --update-secrets # sync .env to Secret Manager first
+./scripts/pipelines/deploy.sh                  # deploy only
+./scripts/pipelines/deploy.sh --update-secrets # sync .env to Secret Manager first
 ```
 
 ### Secrets in Secret Manager
@@ -39,7 +39,7 @@ Required secrets (must exist before deploy):
 - `YAHOO_CLIENT_ID`
 - `YAHOO_CLIENT_SECRET`
 - `CLOUDSQL_PASSWORD`
-- `YAHOO_ACCESS_TOKEN_JSON` — required for Yahoo OAuth on Cloud Run (no interactive login). Generate locally first via normal OAuth flow, then run `scripts/gcloud/build_yahoo_token_json.py`.
+- `YAHOO_ACCESS_TOKEN_JSON` — required for Yahoo OAuth on Cloud Run (no interactive login). Generate locally first via normal OAuth flow, then run `scripts/pipelines/build_yahoo_token_json.py`.
 
 ## Notes
 - `RUNTIME_ENVIRONMENT=docker` tells yfpy not to open a browser for OAuth (uses token JSON instead)

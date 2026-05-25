@@ -1,13 +1,13 @@
 #!/bin/bash
 # Redeploy ClutchAI to Google Cloud Run
-# Run from project root: ./scripts/gcloud/deploy.sh [--update-secrets]
+# Run from project root: ./scripts/pipelines/deploy.sh [--update-secrets]
 #
 # Options:
 #   --update-secrets   Run update_secrets.sh first to sync .env to Secret Manager
 #
 # Prerequisites:
-#   1. Run ./scripts/gcloud/update_secrets.sh (or use --update-secrets) to upload .env to Secret Manager
-#   2. Run ./scripts/gcloud/grant_secrets_access.sh to grant Cloud Run access to secrets
+#   1. Run ./scripts/pipelines/update_secrets.sh (or use --update-secrets) to upload .env to Secret Manager
+#   2. Run ./scripts/pipelines/grant_secrets_access.sh to grant Cloud Run access to secrets
 
 set -e
 

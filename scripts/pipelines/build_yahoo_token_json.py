@@ -7,7 +7,7 @@ writes token vars to .env. Then run this script to output the JSON to store in
 Secret Manager as YAHOO_ACCESS_TOKEN_JSON.
 
 Usage:
-  python scripts/gcloud/build_yahoo_token_json.py [.env path]
+  python scripts/pipelines/build_yahoo_token_json.py [.env path]
   # Copy the single line of JSON output and create the secret:
   echo -n '<paste JSON>' | gcloud secrets create YAHOO_ACCESS_TOKEN_JSON --data-file=- --replication-policy=automatic
   # Or add to .env as YAHOO_ACCESS_TOKEN_JSON='...' and run update_secrets.sh (value must be one line)

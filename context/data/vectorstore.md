@@ -7,14 +7,14 @@
 | `vectorstore` | pgvector embeddings (YouTube transcripts + articles) |
 | `app` | App-level data |
 
-See `data/cloud_sql/schema.py` for full schema. Vector managers: `data/cloud_sql/vector_managers/youtube.py`, `article.py`.
+See `data/postgres/schema.py` for full schema. Vector managers: `data/postgres/vector_managers/youtube.py`, `article.py`.
 
 ## Data Sources
 
 | Source | Pipeline Script | Config |
 |--------|----------------|--------|
-| LockedOn NBA podcasts (YouTube) | `scripts/gcloud/update_lockedon_knowledge.py` | `config/vector_config.yaml` |
-| Articles | `scripts/gcloud/update_vector_database.py` | `config/vector_config.yaml` |
+| LockedOn NBA podcasts (YouTube) | `scripts/pipelines/update_lockedon_knowledge.py` | `config/vector_config.yaml` |
+| Articles | `scripts/pipelines/update_vector_database.py` | `config/vector_config.yaml` |
 
 Knowledge base URLs/channels defined in `data/knowledge_base.yaml`.
 

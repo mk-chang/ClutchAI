@@ -22,7 +22,7 @@ Railway automatically injects `DATABASE_URL` into all services in the same proje
 
 ## Code Changes
 
-### 1. `data/cloud_sql/connection.py` — rewrite
+### 1. `data/postgres/connection.py` — rewrite
 
 Remove the Google Cloud SQL Python Connector entirely. Replace with a standard SQLAlchemy engine built from `DATABASE_URL`.
 
@@ -74,20 +74,20 @@ The schema and pipeline scripts are unchanged — they just point to a different
 
 The cron service uses the same Docker image as the web service with a different start command. Three update scripts exist:
 
-- `scripts/gcloud/update_base_knowledge.py` — base knowledge base (articles, static content)
-- `scripts/gcloud/update_lockedon_knowledge.py` — LockedOn podcast transcripts
-- `scripts/gcloud/update_vector_database.py` — full vectorstore rebuild
+- `scripts/pipelines/update_base_knowledge.py` — base knowledge base (articles, static content)
+- `scripts/pipelines/update_lockedon_knowledge.py` — LockedOn podcast transcripts
+- `scripts/pipelines/update_vector_database.py` — full vectorstore rebuild
 
 Run these as separate Railway cron jobs or wrap them in a single shell script. Schedule: weekly or as needed. `DATABASE_URL` is shared automatically within the Railway project.
 
 ## What Gets Removed
 
-- `scripts/gcloud/deploy.sh` — Railway deploys on push to GitHub
-- `scripts/gcloud/update_secrets.sh` — replaced by Railway dashboard env vars
-- `scripts/gcloud/grant_secrets_access.sh` — not needed
+- `scripts/pipelines/deploy.sh` — Railway deploys on push to GitHub
+- `scripts/pipelines/update_secrets.sh` — replaced by Railway dashboard env vars
+- `scripts/pipelines/grant_secrets_access.sh` — not needed
 - GCP dependencies: `cloud-sql-python-connector`, `pg8000`, `google-cloud-sql-connector`
 
-Other `scripts/gcloud/` scripts (vectorstore pipeline, knowledge base updates) are kept — they run as-is in the cron job context.
+Other `scripts/pipelines/` scripts (vectorstore pipeline, knowledge base updates) are kept — they run as-is in the cron job context.
 
 ## What Stays the Same
 

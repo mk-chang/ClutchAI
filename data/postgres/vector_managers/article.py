@@ -27,8 +27,8 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.vector_managers.base import BaseVectorManager
+from data.postgres.connection import PostgresConnection
+from data.postgres.vector_managers.base import BaseVectorManager
 from logger import get_logger
 
 logger = get_logger(__name__)

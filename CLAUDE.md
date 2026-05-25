@@ -10,10 +10,10 @@ Multi-agent fantasy basketball assistant. Supervisor routes queries to specializ
 | Tools | `agents/tools/` | Yahoo API (45 tools), NBA API (16 tools), RSS, news, rankings |
 | RAG | `agents/rag/` | pgvector retrieval from Cloud SQL knowledge base |
 | UI | `app/streamlit_app.py` | Streamlit frontend, entry point |
-| Database | `data/cloud_sql/` | Cloud SQL connection and table schema |
+| Database | `data/postgres/` | Cloud SQL connection and table schema |
 | Config | `config/` | YAML config for agents, RAG, vectorstore, tools, UI |
 | Tests | `tests/` | Integration tests (pytest) |
 | Docs | `docs/` | Deployment guide, Yahoo OAuth setup |
-| Deploy scripts | `scripts/gcloud/` | Cloud Run deploy, vectorstore pipeline, secrets sync |
+| Deploy scripts | `scripts/pipelines/` | Cloud Run deploy, vectorstore pipeline, secrets sync |
 | Docker scripts | `scripts/docker/` | Local build and run |
 | Context | `context/` | Session notes, priorities, agent patterns, GCP details |

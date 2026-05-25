@@ -4,18 +4,18 @@
 
 **Goal:** Replace GCP infrastructure (Cloud Run + Cloud SQL + Secret Manager) with Railway, keeping Streamlit UI and all agent code untouched.
 
-**Architecture:** Three Railway services share one project — web app, PostgreSQL plugin (with pgvector), and cron job. The only code changes are in `data/cloud_sql/connection.py` (Cloud SQL Connector → standard psycopg2 via `DATABASE_URL`), `data/cloud_sql/schema.py` (env var rename), `requirements.txt`, and `Dockerfile`.
+**Architecture:** Three Railway services share one project — web app, PostgreSQL plugin (with pgvector), and cron job. The only code changes are in `data/postgres/connection.py` (Cloud SQL Connector → standard psycopg2 via `DATABASE_URL`), `data/postgres/schema.py` (env var rename), `requirements.txt`, and `Dockerfile`.
 
 **Tech Stack:** Railway, PostgreSQL + pgvector, SQLAlchemy + psycopg2, existing Streamlit app
 
 ---
 
-### Task 1: Rewrite `data/cloud_sql/connection.py`
+### Task 1: Rewrite `data/postgres/connection.py`
 
 Remove the Google Cloud SQL Python Connector. Replace with a standard SQLAlchemy engine built from `DATABASE_URL`. Keep `get_engine()` and the context manager interface — nothing else in the codebase touches the internals.
 
 **Files:**
-- Modify: `data/cloud_sql/connection.py`
+- Modify: `data/postgres/connection.py`
 - Create: `tests/test_postgres_connection.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -24,7 +24,7 @@ Create `tests/test_postgres_connection.py`:
 
 ```python
 import pytest
-from data.cloud_sql.connection import PostgresConnection
+from data.postgres.connection import PostgresConnection
 
 
 def test_raises_without_database_url(monkeypatch):
@@ -61,7 +61,7 @@ pytest tests/test_postgres_connection.py -v
 
 Expected: 4 failures — `ImportError` or `TypeError` because the current `PostgresConnection.__init__` doesn't accept `database_url`.
 
-- [ ] **Step 3: Rewrite `data/cloud_sql/connection.py`**
+- [ ] **Step 3: Rewrite `data/postgres/connection.py`**
 
 Replace the entire file contents with:
 
@@ -113,22 +113,22 @@ Expected: 4 passing. The engine is created lazily — no real database needed fo
 - [ ] **Step 5: Commit**
 
 ```bash
-git add data/cloud_sql/connection.py tests/test_postgres_connection.py
+git add data/postgres/connection.py tests/test_postgres_connection.py
 git commit -m "Replace Cloud SQL Connector with standard psycopg2 connection via DATABASE_URL"
 ```
 
 ---
 
-### Task 2: Update env var names in `data/cloud_sql/schema.py`
+### Task 2: Update env var names in `data/postgres/schema.py`
 
 `CLOUDSQL_VECTOR_TABLE` and `CLOUDSQL_APP_TABLE` are GCP-prefixed names that should just be `VECTOR_TABLE` and `APP_TABLE` post-migration.
 
 **Files:**
-- Modify: `data/cloud_sql/schema.py`
+- Modify: `data/postgres/schema.py`
 
 - [ ] **Step 1: Update `get_default_table_name()`**
 
-In `data/cloud_sql/schema.py`, find `get_default_table_name()` and replace the body:
+In `data/postgres/schema.py`, find `get_default_table_name()` and replace the body:
 
 ```python
 def get_default_table_name() -> str:
@@ -143,7 +143,7 @@ def get_default_table_name() -> str:
 
 - [ ] **Step 2: Update `get_app_table_name()`**
 
-Find `get_app_table_name()` in `data/cloud_sql/schema.py`. Replace every reference to `CLOUDSQL_APP_TABLE` with `APP_TABLE` in that function's body and its docstring.
+Find `get_app_table_name()` in `data/postgres/schema.py`. Replace every reference to `CLOUDSQL_APP_TABLE` with `APP_TABLE` in that function's body and its docstring.
 
 - [ ] **Step 3: Update test skip condition in `tests/test_vectordb_connection.py`**
 
@@ -169,7 +169,7 @@ Expected: 4 passing. The integration tests in `test_vectordb_connection.py` will
 - [ ] **Step 5: Commit**
 
 ```bash
-git add data/cloud_sql/schema.py tests/test_vectordb_connection.py
+git add data/postgres/schema.py tests/test_vectordb_connection.py
 git commit -m "Rename CLOUDSQL_VECTOR_TABLE -> VECTOR_TABLE, update integration test skip condition"
 ```
 
@@ -345,7 +345,7 @@ Copy the `DATABASE_URL` value. It will look like `postgresql://postgres:password
 ```bash
 export DATABASE_URL="<paste Railway DATABASE_URL here>"
 export VECTOR_TABLE="vectorstore"
-python scripts/gcloud/update_base_knowledge.py
+python scripts/pipelines/update_base_knowledge.py
 ```
 
 Expected: script completes and prints ingestion counts.
@@ -353,7 +353,7 @@ Expected: script completes and prints ingestion counts.
 - [ ] **Step 3: Run the LockedOn podcast pipeline**
 
 ```bash
-python scripts/gcloud/update_lockedon_knowledge.py
+python scripts/pipelines/update_lockedon_knowledge.py
 ```
 
 Expected: script completes and prints ingestion counts.
@@ -361,7 +361,7 @@ Expected: script completes and prints ingestion counts.
 - [ ] **Step 4: Run the full vectorstore update**
 
 ```bash
-python scripts/gcloud/update_vector_database.py
+python scripts/pipelines/update_vector_database.py
 ```
 
 Expected: script completes without errors.
@@ -391,7 +391,7 @@ In Railway dashboard: **+ New** → **Cron Job**. Connect the same GitHub repo a
 Set the start command to:
 
 ```bash
-sh -c "python scripts/gcloud/update_base_knowledge.py && python scripts/gcloud/update_lockedon_knowledge.py && python scripts/gcloud/update_vector_database.py"
+sh -c "python scripts/pipelines/update_base_knowledge.py && python scripts/pipelines/update_lockedon_knowledge.py && python scripts/pipelines/update_vector_database.py"
 ```
 
 Set the cron schedule (e.g., weekly on Sunday at 3am UTC):
@@ -440,7 +440,7 @@ Ask:
 
 > "Summarize my team's performance this week."
 
-Expected: agent fetches live Yahoo Fantasy data and responds. If Yahoo OAuth fails, check `YAHOO_ACCESS_TOKEN_JSON` in the Railway env vars — it may need to be regenerated locally via `scripts/gcloud/build_yahoo_token_json.py`.
+Expected: agent fetches live Yahoo Fantasy data and responds. If Yahoo OAuth fails, check `YAHOO_ACCESS_TOKEN_JSON` in the Railway env vars — it may need to be regenerated locally via `scripts/pipelines/build_yahoo_token_json.py`.
 
 - [ ] **Step 5: (Optional) Clean up GCP resources**
 

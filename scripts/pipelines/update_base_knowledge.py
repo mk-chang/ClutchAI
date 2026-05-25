@@ -2,7 +2,7 @@
 Simple script to update vectordb from YAML file.
 
 Usage:
-    python scripts/vectordb_pipelines/update_base_knowledge.py
+    python scripts/pipelines/update_base_knowledge.py
 """
 
 import os
@@ -11,15 +11,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Add project root to path
-# From scripts/vectordb_pipelines/update_base_knowledge.py
-# .parent = scripts/vectordb_pipelines/
+# From scripts/pipelines/update_base_knowledge.py
+# .parent = scripts/pipelines/
 # .parent.parent = scripts/
 # .parent.parent.parent = project root
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.vector_managers import YoutubeVectorManager, ArticleVectorManager
+from data.postgres.connection import PostgresConnection
+from data.postgres.vector_managers import YoutubeVectorManager, ArticleVectorManager
 from langchain_openai import OpenAIEmbeddings
 from logger import get_logger, setup_logging
 

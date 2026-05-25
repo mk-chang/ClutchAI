@@ -15,9 +15,9 @@ This guide covers deploying ClutchAI to Google Cloud Run, connecting a custom do
 Before deploying, upload your environment variables to Google Cloud Secret Manager:
 
 ```bash
-./scripts/gcloud/update_secrets.sh
+./scripts/pipelines/update_secrets.sh
 # Or with a specific env file:
-./scripts/gcloud/update_secrets.sh .env.prod
+./scripts/pipelines/update_secrets.sh .env.prod
 ```
 
 This creates secrets in Secret Manager with the same names as your env var keys (e.g., `OPENAI_API_KEY`, `YAHOO_CLIENT_ID`).
@@ -45,7 +45,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 ## 3. Deploy to Cloud Run
 
 ```bash
-./scripts/gcloud/deploy.sh
+./scripts/pipelines/deploy.sh
 ```
 
 The deploy script:
@@ -123,7 +123,7 @@ The deploy script sets `YAHOO_REDIRECT_URI=https://www.clutchai.app` for product
    Use the same Yahoo account that should access the app in production. After you sign in, yfpy will write token variables to your `.env`.
 3. Build the single token JSON that Cloud Run needs:
    ```bash
-   python scripts/gcloud/build_yahoo_token_json.py
+   python scripts/pipelines/build_yahoo_token_json.py
    ```
    This prints one line of JSON. If you see "Missing required keys", complete the OAuth flow in the app first so `.env` gets the token vars.
 
@@ -140,11 +140,11 @@ The deploy script sets `YAHOO_REDIRECT_URI=https://www.clutchai.app` for product
    ```
 2. Grant Cloud Run access to the secret (if you haven’t already):
    ```bash
-   ./scripts/gcloud/grant_secrets_access.sh
+   ./scripts/pipelines/grant_secrets_access.sh
    ```
 3. Redeploy. The deploy script already injects `YAHOO_ACCESS_TOKEN_JSON` from Secret Manager:
    ```bash
-   ./scripts/gcloud/deploy.sh
+   ./scripts/pipelines/deploy.sh
    ```
 
 After this, Yahoo OAuth on Cloud Run uses the stored tokens (and refreshes them when needed) and no longer requires stdin or a browser.
@@ -187,11 +187,11 @@ The app uses the `logger` module; in production it logs to stderr. Cloud Run cap
 
 **Cause:** The Yahoo OAuth library tries to do **interactive** auth (e.g. `input()` for a code or open a browser) when tokens are missing. On Cloud Run there is no stdin and no browser, so that raises `EOFError: EOF when reading a line`.
 
-**Fix:** Pre-save Yahoo tokens and inject them on Cloud Run. Follow **Section 5 (Make Yahoo OAuth work on Cloud Run)** above: run OAuth once locally with `YAHOO_REDIRECT_URI=https://www.clutchai.app`, run `python scripts/gcloud/build_yahoo_token_json.py`, create the `YAHOO_ACCESS_TOKEN_JSON` secret, then redeploy. After that, Yahoo features work on Cloud Run without interactive login.
+**Fix:** Pre-save Yahoo tokens and inject them on Cloud Run. Follow **Section 5 (Make Yahoo OAuth work on Cloud Run)** above: run OAuth once locally with `YAHOO_REDIRECT_URI=https://www.clutchai.app`, run `python scripts/pipelines/build_yahoo_token_json.py`, create the `YAHOO_ACCESS_TOKEN_JSON` secret, then redeploy. After that, Yahoo features work on Cloud Run without interactive login.
 
 ### "Secret not found" or "Permission denied" on secrets
 
-1. Run `./scripts/gcloud/update_secrets.sh` to create/update secrets
+1. Run `./scripts/pipelines/update_secrets.sh` to create/update secrets
 2. Run the IAM binding command in Step 2 to grant the service account access
 3. Redeploy
 

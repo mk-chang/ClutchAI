@@ -14,14 +14,14 @@
 
 ### Code Implementation (Tasks 1–4, subagent-driven)
 
-**Task 1: Rewrote `data/cloud_sql/connection.py`**
+**Task 1: Rewrote `data/postgres/connection.py`**
 - Replaced 220-line GCP-specific Cloud SQL Connector implementation with 33-line standard psycopg2 class
 - New class reads `DATABASE_URL` env var, rewrites `postgresql://` → `postgresql+psycopg2://` for SQLAlchemy
 - Deleted `create_database_if_not_exists` function (Railway manages DB creation)
-- Deleted `scripts/gcloud/create_database.py` (imported the deleted function, now obsolete)
+- Deleted `scripts/pipelines/create_database.py` (imported the deleted function, now obsolete)
 - Created `tests/test_postgres_connection.py` with 5 unit tests (no real DB needed)
 
-**Task 2: Updated `data/cloud_sql/schema.py` + `tests/test_vectordb_connection.py`**
+**Task 2: Updated `data/postgres/schema.py` + `tests/test_vectordb_connection.py`**
 - Renamed `CLOUDSQL_VECTOR_TABLE` → `VECTOR_TABLE` in `get_default_table_name()`
 - Renamed `CLOUDSQL_APP_TABLE` → `APP_TABLE` in `get_app_table_name()`
 - Updated all docstring references to the old env var names
@@ -40,13 +40,13 @@
 
 | File | Change |
 |------|--------|
-| `data/cloud_sql/connection.py` | Full rewrite — Cloud SQL Connector → psycopg2 + DATABASE_URL |
+| `data/postgres/connection.py` | Full rewrite — Cloud SQL Connector → psycopg2 + DATABASE_URL |
 | `tests/test_postgres_connection.py` | Created — 5 unit tests for new connection class |
-| `data/cloud_sql/schema.py` | Env var renames: CLOUDSQL_VECTOR_TABLE→VECTOR_TABLE, CLOUDSQL_APP_TABLE→APP_TABLE |
+| `data/postgres/schema.py` | Env var renames: CLOUDSQL_VECTOR_TABLE→VECTOR_TABLE, CLOUDSQL_APP_TABLE→APP_TABLE |
 | `tests/test_vectordb_connection.py` | Updated skipif to check DATABASE_URL |
 | `requirements.txt` | Removed cloud-sql-python-connector |
 | `Dockerfile` | CMD uses ${PORT:-8080} |
-| `scripts/gcloud/create_database.py` | Deleted (imported removed function, obsolete on Railway) |
+| `scripts/pipelines/create_database.py` | Deleted (imported removed function, obsolete on Railway) |
 | `docs/superpowers/specs/2026-05-20-railway-migration-design.md` | Created |
 | `docs/superpowers/plans/2026-05-20-railway-migration.md` | Created |
 
@@ -61,5 +61,5 @@
 
 - The `CLOUDSQL_VECTOR_TABLE` → `VECTOR_TABLE` rename means Railway env vars must use the new names
 - Yahoo OAuth: `YAHOO_ACCESS_TOKEN_JSON` still works the same — generate locally, paste into Railway env vars
-- The 3 vectorstore update scripts in `scripts/gcloud/` are kept and will run as Railway cron jobs
+- The 3 vectorstore update scripts in `scripts/pipelines/` are kept and will run as Railway cron jobs
 - User installed Railway CLI and Railway MCP into the clutchai conda env this session — restart required for MCP to be available

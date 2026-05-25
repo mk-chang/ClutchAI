@@ -3,7 +3,7 @@
 # Grant the Cloud Run service account permission to read secrets from Secret Manager.
 # Run this once before deploying, or if you get "Permission denied" on secret access.
 #
-# Usage: ./scripts/gcloud/grant_secrets_access.sh [project_id]
+# Usage: ./scripts/pipelines/grant_secrets_access.sh [project_id]
 
 set -e
 

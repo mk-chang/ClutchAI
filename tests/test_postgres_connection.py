@@ -1,5 +1,5 @@
 import pytest
-from data.cloud_sql.connection import PostgresConnection
+from data.postgres.connection import PostgresConnection
 
 
 def test_raises_without_database_url(monkeypatch):

@@ -17,8 +17,8 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
 from langchain_postgres import PGVector
 
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.schema import setup_pgvector_extension, get_default_table_name
+from data.postgres.connection import PostgresConnection
+from data.postgres.schema import setup_pgvector_extension, get_default_table_name
 from data.data_class import YouTubeVideo
 from logger import get_logger
 

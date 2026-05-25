@@ -24,8 +24,8 @@ from agents.multi_agent.news_agent import NewsAgent
 from agents.multi_agent.analyst_agent import FantasyAnalystAgent
 from agents.multi_agent.user_context import UserContextGatherer
 from agents.rag.rag_manager import RAGManager
-from data.cloud_sql.connection import PostgresConnection
-from data.cloud_sql.schema import get_default_table_name
+from data.postgres.connection import PostgresConnection
+from data.postgres.schema import get_default_table_name
 
 logger = get_logger(__name__)
 
