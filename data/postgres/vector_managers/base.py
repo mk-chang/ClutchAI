@@ -289,7 +289,8 @@ class BaseVectorManager(ABC):
                     logger.info(f"  [DEV] Nothing removed — all {len(docs)} chunks kept")
 
             logger.info(
-                f"  Cleaned: {len(docs)} → {len(kept)} chunks, {chars_before:,} → {chars_after:,} chars"
+                f"  Cleaned: {len(docs)} → {len(kept)} chunks | {chars_before:,} → {chars_after:,} chars"
+                + (f" | removed {removed}" if removed else " | nothing removed")
             )
             return kept
         except Exception as e:
