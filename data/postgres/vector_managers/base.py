@@ -256,9 +256,10 @@ class BaseVectorManager(ABC):
             return docs
 
         dev_mode = os.environ.get('DEV_MODE', 'false').lower() == 'true'
+        chars_before = sum(len(d.page_content) for d in docs)
 
         if dev_mode:
-            logger.info(f"  [DEV] Before cleaning — {len(docs)} chunks. First 3 samples:")
+            logger.info(f"  [DEV] Before cleaning — {len(docs)} chunks, {chars_before:,} chars. First 3 samples:")
             for i, doc in enumerate(docs[:3]):
                 preview = doc.page_content.strip()[:150].replace('\n', ' ')
                 logger.info(f"    [{i}] {preview}")
@@ -275,6 +276,7 @@ class BaseVectorManager(ABC):
             result = _json.loads(response.choices[0].message.content)
             indices_to_remove = set(result.get("remove", []))
             kept = [doc for i, doc in enumerate(docs) if i not in indices_to_remove]
+            chars_after = sum(len(d.page_content) for d in kept)
             removed = len(docs) - len(kept)
 
             if dev_mode:
@@ -286,9 +288,9 @@ class BaseVectorManager(ABC):
                 else:
                     logger.info(f"  [DEV] Nothing removed — all {len(docs)} chunks kept")
 
-            if removed:
-                logger.info(f"  Cleaned content: removed {removed} non-content chunks "
-                            f"({len(kept)}/{len(docs)} kept)")
+            logger.info(
+                f"  Cleaned: {len(docs)} → {len(kept)} chunks, {chars_before:,} → {chars_after:,} chars"
+            )
             return kept
         except Exception as e:
             logger.warning(f"  Content cleaning failed ({e}), using raw chunks")
