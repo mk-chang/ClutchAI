@@ -96,7 +96,7 @@ class WaiverWireTool(ClutchAITool):
         return result
 
     def get_all_tools(self) -> list:
-        get_waiver_wire_players = self._get_waiver_wire_players
+        _ww_fetch = self._get_waiver_wire_players
         cache_key = self._cache_key
         redis_client = self.redis_client
         fetch_free_agents = self._fetch_free_agents
@@ -115,14 +115,17 @@ class WaiverWireTool(ClutchAITool):
             Returns:
                 JSON string with list of free agent player objects
             """
-            return get_waiver_wire_players(limit=limit)
+            return _ww_fetch(limit=limit)
 
         @tool
-        def refresh_waiver_wire_cache() -> str:
+        def refresh_waiver_wire_cache(limit: int = 50) -> str:
             """
             Force a fresh fetch of waiver wire players from Yahoo, bypassing the Redis cache.
 
             Use this when you need up-to-date data after recent roster moves.
+
+            Args:
+                limit: Maximum number of players to fetch (default 50)
 
             Returns:
                 JSON string with updated list of free agent player objects
@@ -130,7 +133,7 @@ class WaiverWireTool(ClutchAITool):
             if redis_client is not None:
                 redis_client.delete(cache_key())
                 logger.info("Waiver wire cache cleared")
-            players = fetch_free_agents(limit=50)
+            players = fetch_free_agents(limit=limit)
             result = json.dumps(players, indent=2)
             if redis_client is not None:
                 redis_client.setex(cache_key(), _CACHE_TTL, result)
