@@ -15,7 +15,7 @@ class AllTranscriptSourcesExhausted(Exception):
 
 
 class VideoQueueManager:
-    TABLE = "lockedon_video_queue"
+    TABLE = "yt_podcast_queue"
 
     def __init__(self, connection: PostgresConnection):
         self.connection = connection
