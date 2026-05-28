@@ -42,5 +42,8 @@ pytest
 pytest-cov
 pytest-mock
 
+# Redis caching
+redis
+
 # Railway deployment
 railway
