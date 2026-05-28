@@ -14,31 +14,32 @@ _TOT_TABLE = 'bball_monsters_player_stats_total'
 _P36_TABLE = 'bball_monsters_player_stats_p36'
 
 _PV_WEIGHTS = {'pts': 1.0, 'reb': 1.2, 'ast': 1.5,
-               'stl': 3.0, 'blk': 3.0, 'tov': -1.0}
+               'stl': 3.0, 'blk': 3.0, 'to': -1.0}
 
 _READ_SQL = lambda table, season: text(f"""
-    SELECT player_id, season, min, pts, reb, ast, stl, blk, tov,
+    SELECT player_id, season, min, pts, reb, ast, stl, blk, "to",
            fg3m, fg_pct, fga, ft_pct, fta
     FROM {table}
     WHERE season = :season
 """)
 
+# z-score cols quoted to preserve case; aggregate renamed to value
 _WRITE_SQL = lambda table: text(f"""
     UPDATE {table}
-    SET z_pts   = :z_pts,   z_reb   = :z_reb,   z_ast   = :z_ast,
-        z_stl   = :z_stl,   z_blk   = :z_blk,   z_3ptm  = :z_3ptm,
-        z_tov   = :z_tov,   z_fg    = :z_fg,     z_ft    = :z_ft,
-        rv      = :rv,      three_v = :three_v,
+    SET "pV"    = :pV,    "rV"    = :rV,    "aV"    = :aV,
+        "sV"    = :sV,    "bV"    = :bV,    "pts3V" = :pts3V,
+        "toV"   = :toV,   "fgV"   = :fgV,   "ftV"   = :ftV,
+        value   = :value, three_v = :three_v,
         updated_at = NOW()
     WHERE player_id = :player_id AND season = :season
 """)
 
 _WRITE_WITH_PV_SQL = lambda table: text(f"""
     UPDATE {table}
-    SET z_pts   = :z_pts,   z_reb   = :z_reb,   z_ast   = :z_ast,
-        z_stl   = :z_stl,   z_blk   = :z_blk,   z_3ptm  = :z_3ptm,
-        z_tov   = :z_tov,   z_fg    = :z_fg,     z_ft    = :z_ft,
-        rv      = :rv,      three_v = :three_v,  pv      = :pv,
+    SET "pV"    = :pV,    "rV"    = :rV,    "aV"    = :aV,
+        "sV"    = :sV,    "bV"    = :bV,    "pts3V" = :pts3V,
+        "toV"   = :toV,   "fgV"   = :fgV,   "ftV"   = :ftV,
+        value   = :value, three_v = :three_v, pv     = :pv,
         updated_at = NOW()
     WHERE player_id = :player_id AND season = :season
 """)
@@ -95,20 +96,19 @@ class PlayerValueCalculator:
             impact_all = (df[pct_col] - mean_pct) * df[vol_col]
             return (impact_all - mean_i) / std_i
 
-        df['z_pts']   = _z('pts')
-        df['z_reb']   = _z('reb')
-        df['z_ast']   = _z('ast')
-        df['z_stl']   = _z('stl')
-        df['z_blk']   = _z('blk')
-        df['z_3ptm']  = _z('fg3m')
-        df['z_tov']   = _z('tov', negate=True)
-        df['z_fg']    = _z_vw('fg_pct', 'fga')
-        df['z_ft']    = _z_vw('ft_pct', 'fta')
+        df['pV']    = _z('pts')
+        df['rV']    = _z('reb')
+        df['aV']    = _z('ast')
+        df['sV']    = _z('stl')
+        df['bV']    = _z('blk')
+        df['pts3V'] = _z('fg3m')
+        df['toV']   = _z('to', negate=True)
+        df['fgV']   = _z_vw('fg_pct', 'fga')
+        df['ftV']   = _z_vw('ft_pct', 'fta')
 
-        z_cols = ['z_pts', 'z_reb', 'z_ast', 'z_stl', 'z_blk',
-                  'z_3ptm', 'z_tov', 'z_fg', 'z_ft']
-        df['rv']      = df[z_cols].sum(axis=1)
-        df['three_v'] = df['z_3ptm']
+        z_cols = ['pV', 'rV', 'aV', 'sV', 'bV', 'pts3V', 'toV', 'fgV', 'ftV']
+        df['value']   = df[z_cols].sum(axis=1)
+        df['three_v'] = df['pts3V']
 
         if include_pv:
             raw_pv = sum(df[stat] * w for stat, w in _PV_WEIGHTS.items())
@@ -124,11 +124,11 @@ class PlayerValueCalculator:
             for row in df.to_dict('records'):
                 params = {
                     'player_id': row['player_id'], 'season': row['season'],
-                    'z_pts':  row['z_pts'],  'z_reb': row['z_reb'],
-                    'z_ast':  row['z_ast'],  'z_stl': row['z_stl'],
-                    'z_blk':  row['z_blk'],  'z_3ptm': row['z_3ptm'],
-                    'z_tov':  row['z_tov'],  'z_fg':  row['z_fg'],
-                    'z_ft':   row['z_ft'],   'rv':    row['rv'],
+                    'pV':    row['pV'],    'rV':    row['rV'],
+                    'aV':    row['aV'],    'sV':    row['sV'],
+                    'bV':    row['bV'],    'pts3V': row['pts3V'],
+                    'toV':   row['toV'],   'fgV':   row['fgV'],
+                    'ftV':   row['ftV'],   'value': row['value'],
                     'three_v': row['three_v'],
                 }
                 if include_pv:

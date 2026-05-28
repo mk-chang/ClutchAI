@@ -20,16 +20,23 @@ _STAT_COLS = [
 _P36_STAT_COLS = [c for c in _STAT_COLS if c != 'PLUS_MINUS']
 _INFO_COLS = ['PLAYER_ID', 'PLAYER_NAME', 'TEAM_ABBREVIATION', 'AGE', 'GP']
 
-_Z_COLS = ['z_pts', 'z_reb', 'z_ast', 'z_stl', 'z_blk', 'z_3ptm',
-           'z_tov', 'z_fg', 'z_ft']
-_PG_VALUE_COLS  = ['rv', 'three_v', 'pv']
-_TOT_VALUE_COLS = ['rv', 'three_v']
-_P36_VALUE_COLS = ['rv', 'three_v', 'pv']
+# BBM-style names; quoted in SQL to preserve case (avoids collision with pv/to stat cols)
+_Z_COLS = ['pV', 'rV', 'aV', 'sV', 'bV', 'pts3V', 'toV', 'fgV', 'ftV']
+_PG_VALUE_COLS  = ['value', 'three_v', 'pv']
+_TOT_VALUE_COLS = ['value', 'three_v']
+_P36_VALUE_COLS = ['value', 'three_v', 'pv']
+
+# NBA API col (lowercase) → SQL col name overrides
+_STAT_SQL_RENAMES = {'tov': 'to'}
+
+
+def _stat_sql_col(nba_col: str) -> str:
+    return _STAT_SQL_RENAMES.get(nba_col.lower(), nba_col.lower())
 
 
 def _make_create_sql(table: str, stat_cols: list, value_cols: list) -> text:
-    stat_ddl  = ',\n        '.join(f'{c.lower()} FLOAT' for c in stat_cols)
-    z_ddl     = ',\n        '.join(f'{c} FLOAT' for c in _Z_COLS)
+    stat_ddl  = ',\n        '.join(f'{_stat_sql_col(c)} FLOAT' for c in stat_cols)
+    z_ddl     = ',\n        '.join(f'"{c}" FLOAT' for c in _Z_COLS)
     value_ddl = ',\n        '.join(f'{c} FLOAT' for c in value_cols)
     return text(f"""
         CREATE TABLE IF NOT EXISTS {table} (
@@ -49,28 +56,33 @@ def _make_create_sql(table: str, stat_cols: list, value_cols: list) -> text:
 
 
 def _make_upsert_sql(table: str, stat_cols: list, value_cols: list) -> text:
-    all_stat  = [c.lower() for c in stat_cols]
+    sql_stat  = [_stat_sql_col(c) for c in stat_cols]
     all_value = list(value_cols)
-    all_z     = list(_Z_COLS)
 
-    insert_cols   = ['player_id', 'season', 'player_name', 'team_abbreviation', 'age', 'gp'] + all_stat
-    insert_params = [f':{c}' for c in insert_cols]
-    update_cols   = ['player_name', 'team_abbreviation', 'age', 'gp'] + all_stat + all_z + all_value
+    info_cols     = ['player_id', 'season', 'player_name', 'team_abbreviation', 'age', 'gp']
+    z_col_sql     = [f'"{c}"' for c in _Z_COLS]
+
+    insert_cols   = info_cols + sql_stat + z_col_sql + all_value
+    insert_params = ([f':{c}' for c in info_cols + sql_stat] +
+                     [f':{c}' for c in _Z_COLS] +
+                     [f':{c}' for c in all_value])
+
+    update_parts  = (
+        [f'{c} = EXCLUDED.{c}' for c in ['player_name', 'team_abbreviation', 'age', 'gp'] + sql_stat] +
+        [f'"{c}" = EXCLUDED."{c}"' for c in _Z_COLS] +
+        [f'{c} = EXCLUDED.{c}' for c in all_value]
+    )
 
     return text(f"""
         INSERT INTO {table} (
             {', '.join(insert_cols)},
-            {', '.join(all_z)},
-            {', '.join(all_value)},
             updated_at
         ) VALUES (
             {', '.join(insert_params)},
-            {', '.join(f':{c}' for c in all_z)},
-            {', '.join(f':{c}' for c in all_value)},
             NOW()
         )
         ON CONFLICT (player_id, season) DO UPDATE SET
-            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)},
+            {', '.join(update_parts)},
             updated_at = NOW()
     """)
 
@@ -159,7 +171,7 @@ class PlayerStatsManager:
                     'gp':                row.get('GP'),
                 }
                 for c in stat_cols:
-                    params[c.lower()] = row.get(c)
+                    params[_stat_sql_col(c)] = row.get(c)
                 for c in _Z_COLS + value_cols:
                     params[c] = None  # filled in by PlayerValueCalculator
                 conn.execute(sql, params)

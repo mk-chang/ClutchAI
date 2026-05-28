@@ -71,8 +71,8 @@ class PlayerStatsTool(ClutchAITool):
             description=(
                 "Query NBA player stats with z-scores and value metrics (Basketball Monster style). "
                 "stat_type: 'pg' (per-game, default), 'total' (season totals), 'p36' (per-36 minutes). "
-                "Returns stats, z_pts/z_reb/z_ast/z_stl/z_blk/z_3ptm/z_tov/z_fg/z_ft, "
-                "rv (roto value), three_v (3-point value), pv (Yahoo points value). "
+                "Returns stats, pV/rV/aV/sV/bV/pts3V/toV/fgV/ftV (z-scores), "
+                "value (roto value = sum of z-scores), three_v (3-point value), pv (Yahoo points value). "
                 "Filter by player_name (partial) or team abbreviation (e.g. 'LAL'). "
                 "season_override: '2023-24', '2024-25', or '2025-26'."
             ),

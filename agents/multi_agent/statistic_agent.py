@@ -29,8 +29,8 @@ Use basketball_monster_stats for player stats with value metrics:
 - stat_type='p36'   → per-36 minute rates + z-scores + rv, pv, three_v
 Available seasons: 2023-24, 2024-25, 2025-26.
 
-Z-scores: z_pts, z_reb, z_ast, z_stl, z_blk, z_3ptm (=three_v), z_tov, z_fg, z_ft.
-rv = sum of all 9 z-scores. pv = Yahoo points league value vs replacement.
+Z-scores: pV, rV, aV, sV, bV, pts3V (=three_v), toV, fgV, ftV.
+value = sum of all 9 z-scores. pv = Yahoo points league value vs replacement.
 
 Use NBA API tools for career stats, game logs, live scores, and splits."""
 

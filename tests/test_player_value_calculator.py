@@ -17,7 +17,7 @@ def _make_pool_df(n=160):
         'ast':         rng.uniform(1, 12, n),
         'stl':         rng.uniform(0.3, 2.5, n),
         'blk':         rng.uniform(0.1, 3.0, n),
-        'tov':         rng.uniform(0.8, 4.5, n),
+        'to':          rng.uniform(0.8, 4.5, n),
         'fg3m':        rng.uniform(0, 4.5, n),
         'fg_pct':      rng.uniform(0.38, 0.65, n),
         'fga':         rng.uniform(3, 20, n),
@@ -85,27 +85,26 @@ def test_calculate_writes_z_scores_back_to_pg():
             calc.calculate('2025-26', table='pg')
             mock_write.assert_called_once()
             written_df = mock_write.call_args[0][0]
-            assert 'z_pts' in written_df.columns
-            assert 'z_fg' in written_df.columns
-            assert 'z_3ptm' in written_df.columns
-            assert 'rv' in written_df.columns
+            assert 'pV' in written_df.columns
+            assert 'fgV' in written_df.columns
+            assert 'pts3V' in written_df.columns
+            assert 'value' in written_df.columns
 
 def test_calculate_rv_is_sum_of_nine_z_scores():
     from data.postgres.player_value import PlayerValueCalculator
     calc = PlayerValueCalculator(MagicMock())
     df = _make_pool_df(n=160)
     result = calc._compute_values(df, include_pv=True)
-    z_cols = ['z_pts', 'z_reb', 'z_ast', 'z_stl', 'z_blk',
-              'z_3ptm', 'z_tov', 'z_fg', 'z_ft']
+    z_cols = ['pV', 'rV', 'aV', 'sV', 'bV', 'pts3V', 'toV', 'fgV', 'ftV']
     expected_rv = result[z_cols].sum(axis=1)
-    pd.testing.assert_series_equal(result['rv'], expected_rv, check_names=False)
+    pd.testing.assert_series_equal(result['value'], expected_rv, check_names=False)
 
 def test_calculate_three_v_equals_z_3ptm():
     from data.postgres.player_value import PlayerValueCalculator
     calc = PlayerValueCalculator(MagicMock())
     df = _make_pool_df(n=160)
     result = calc._compute_values(df, include_pv=True)
-    pd.testing.assert_series_equal(result['three_v'], result['z_3ptm'], check_names=False)
+    pd.testing.assert_series_equal(result['three_v'], result['pts3V'], check_names=False)
 
 def test_calculate_pv_replacement_is_150th():
     from data.postgres.player_value import PlayerValueCalculator
@@ -114,6 +113,6 @@ def test_calculate_pv_replacement_is_150th():
     result = calc._compute_values(df, include_pv=True)
     # Player ranked exactly 150th by raw_pv should have pv ≈ 0
     raw_pv = (df['pts'] * 1.0 + df['reb'] * 1.2 + df['ast'] * 1.5
-              + df['stl'] * 3.0 + df['blk'] * 3.0 + df['tov'] * -1.0)
+              + df['stl'] * 3.0 + df['blk'] * 3.0 + df['to'] * -1.0)
     replacement = raw_pv.nlargest(150).iloc[-1]
     assert abs((raw_pv - replacement).iloc[0] - result['pv'].iloc[0]) < 1e-6
