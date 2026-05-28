@@ -9,11 +9,12 @@ This agent specializes in gathering data from Yahoo Fantasy API:
 """
 
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 from yfpy.query import YahooFantasySportsQuery
 
 from agents.multi_agent.base_agent import BaseAgent
 from agents.tools.yahoo_api import YahooFantasyTool
+from agents.tools.waiver_wire import WaiverWireTool
 
 logger = None  # Will be set by BaseAgent
 
@@ -22,7 +23,11 @@ class YahooFantasyAgent(BaseAgent):
     """
     Yahoo Fantasy Agent that specializes in Yahoo Fantasy API data.
     """
-    
+
+    def __init__(self, redis_client=None, **kwargs):
+        self._redis_client = redis_client
+        super().__init__(**kwargs)
+
     def _get_config_section(self) -> str:
         """Get the configuration section name for this agent."""
         return 'yahoo_fantasy'
@@ -35,6 +40,7 @@ Your role is to gather comprehensive data from the Yahoo Fantasy API:
 - Team data: rosters, stats, matchups, draft results
 - Player data: stats, ownership, draft analysis
 - Transaction data: trades, waiver claims, adds/drops
+- Waiver wire: available free agents with ownership percentages
 
 When given a research task, use all relevant Yahoo Fantasy tools to gather data.
 Be thorough and provide structured data that can be easily analyzed."""
@@ -49,15 +55,19 @@ Be thorough and provide structured data that can be easily analyzed."""
             self.logger.warning("YahooFantasySportsQuery not provided. Yahoo Fantasy tools will not be available.")
         else:
             try:
-                yahoo_tool = YahooFantasyTool(
-                    query=self.query,
-                    debug=self.debug,
-                )
+                yahoo_tool = YahooFantasyTool(query=self.query, debug=self.debug)
                 tools.extend(yahoo_tool.get_all_tools())
                 self.logger.debug("Yahoo Fantasy tools loaded")
             except Exception as e:
                 self.logger.warning(f"Yahoo Fantasy tools not available: {e}")
-        
+
+            try:
+                waiver_tool = WaiverWireTool(query=self.query, redis_client=self._redis_client, debug=self.debug)
+                tools.extend(waiver_tool.get_all_tools())
+                self.logger.debug("Waiver wire tools loaded")
+            except Exception as e:
+                self.logger.warning(f"Waiver wire tools not available: {e}")
+
         self.logger.info(f"Yahoo Fantasy Agent initialized with {len(tools)} tools")
         return tools
 
