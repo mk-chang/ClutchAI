@@ -145,3 +145,18 @@ class TestLoadResourceContentCleaning:
         assert len(docs) == 1
         assert docs[0].metadata.get("title") == "My Video"
         assert docs[0].metadata.get("source_type") == "youtube"
+
+
+def test_raises_all_sources_exhausted_when_supadata_also_fails(manager):
+    """When YouTube is blocked AND Supadata fails, raise AllTranscriptSourcesExhausted."""
+    from data.postgres.video_queue import AllTranscriptSourcesExhausted
+    manager._youtube_blocked = True
+
+    with patch('data.postgres.vector_managers.youtube.YoutubeLoader'), \
+         patch.object(manager, '_fetch_transcript_supadata', side_effect=Exception("429 Too Many Requests")), \
+         patch.object(manager, '_fetch_video_metadata_from_api', return_value=None):
+        with pytest.raises(AllTranscriptSourcesExhausted):
+            manager.load_resource_content(
+                url="https://www.youtube.com/watch?v=abc123",
+                resource_id="abc123",
+            )

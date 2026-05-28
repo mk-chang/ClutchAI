@@ -25,6 +25,7 @@ from langchain_community.document_loaders import YoutubeLoader
 from langchain_community.document_loaders.youtube import TranscriptFormat
 
 from data.postgres.connection import PostgresConnection
+from data.postgres.video_queue import AllTranscriptSourcesExhausted
 from data.postgres.vector_managers.base import BaseVectorManager
 from data.data_class import YouTubeVideo, extract_youtube_video_id
 from logger import get_logger
@@ -349,6 +350,9 @@ class YoutubeVectorManager(BaseVectorManager):
                 logger.info(f"  ✓ Supadata fallback succeeded ({len(docs)} chunks)")
             except Exception as supadata_err:
                 logger.error(f"  ✗ Supadata fallback failed: {supadata_err}")
+                raise AllTranscriptSourcesExhausted(
+                    f"Both YouTube and Supadata failed for {url}"
+                ) from supadata_err
 
         if docs is None:
             raise ValueError(f"Failed to load transcript from {url}: {last_exception}") from last_exception
