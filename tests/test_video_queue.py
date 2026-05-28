@@ -65,6 +65,22 @@ def test_get_pending_empty_queue(mock_connection):
     assert manager.get_pending() == []
 
 
+def test_get_pending_includes_failed_under_max_attempts(mock_connection):
+    mock_pg, mock_conn = mock_connection
+    mock_row = MagicMock()
+    mock_row._mapping = {
+        "video_id": "xyz789",
+        "title": "Failed Episode",
+        "url": "https://www.youtube.com/watch?v=xyz789",
+        "publish_date": None,
+    }
+    mock_conn.execute.return_value.fetchall.return_value = [mock_row]
+    manager = VideoQueueManager(mock_pg)
+    result = manager.get_pending(limit=5, max_attempts=3)
+    assert len(result) == 1
+    assert result[0]["video_id"] == "xyz789"
+
+
 def test_mark_done_executes_and_commits(mock_connection):
     mock_pg, mock_conn = mock_connection
     manager = VideoQueueManager(mock_pg)

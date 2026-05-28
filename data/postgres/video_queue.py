@@ -67,19 +67,28 @@ class VideoQueueManager:
             conn.commit()
             return result.rowcount > 0
 
-    def get_pending(self, limit: int = 15) -> List[Dict]:
-        """Return up to `limit` pending videos, newest-first."""
+    def get_pending(self, limit: int = 15, max_attempts: int = 3) -> List[Dict]:
+        """Return up to `limit` videos that still need processing.
+
+        Includes both 'pending' videos and 'failed' videos with fewer than
+        max_attempts, so transient failures are retried automatically.
+        Pending videos are prioritized over failed ones; within each group,
+        newest-first.
+        """
         engine = self.connection.get_engine()
         with engine.connect() as conn:
             result = conn.execute(
                 text(f"""
                     SELECT video_id, title, url, publish_date
                     FROM {self.TABLE}
-                    WHERE status = 'pending'
-                    ORDER BY publish_date DESC NULLS LAST
+                    WHERE (status = 'pending')
+                       OR (status = 'failed' AND attempts < :max_attempts)
+                    ORDER BY
+                        CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
+                        publish_date DESC NULLS LAST
                     LIMIT :limit
                 """),
-                {"limit": limit},
+                {"limit": limit, "max_attempts": max_attempts},
             )
             return [dict(row._mapping) for row in result.fetchall()]
 
