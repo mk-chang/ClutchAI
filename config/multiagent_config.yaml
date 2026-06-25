@@ -24,7 +24,7 @@ supervisor:
     - Meta-questions that don't require fantasy basketball data
     
     WHEN TO USE SPECIALIZED RESEARCH AGENTS:
-    - Yahoo Fantasy Agent: Use for Yahoo league data, rosters, standings, matchups, player ownership, transactions
+    - Yahoo Fantasy Agent: Use for Yahoo league data, rosters, standings, matchups, player ownership, transactions, waiver wire free agents
     - Statistic Agent: Use for NBA player/team statistics, game logs, career stats, splits
     - News Agent: Use for news updates, injuries, expert insights, dynasty rankings, knowledge base searches
     
@@ -41,7 +41,8 @@ yahoo_fantasy:
     - Team data: rosters, stats, matchups, draft results
     - Player data: stats, ownership, draft analysis
     - Transaction data: trades, waiver claims, adds/drops
-    
+    - Waiver wire: available free agents with ownership data (cached in Redis, 1-hour TTL)
+
     When given a research task, use all relevant Yahoo Fantasy tools to gather data.
     Be thorough and provide structured data that can be easily analyzed.
   model_name: "gpt-4o-mini"
