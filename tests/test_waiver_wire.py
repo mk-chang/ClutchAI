@@ -76,13 +76,29 @@ class TestWaiverWireTool:
         query = _make_mock_query(players)
         tool = WaiverWireTool(query=query, redis_client=redis_client)
 
-        result = tool._get_waiver_wire_players(limit=50)
+        result = tool._get_waiver_wire_players()
 
         redis_client.setex.assert_called_once()
         call_args = redis_client.setex.call_args
         assert call_args[0][0] == "clutchai:waiver_wire:466.l.58930"
         assert call_args[0][1] == 3600
         assert "Devin Booker" in result
+
+    def test_redis_read_failure_falls_back_to_live(self):
+        from agents.tools.waiver_wire import WaiverWireTool
+
+        redis_client = MagicMock()
+        redis_client.get.side_effect = Exception("Redis connection lost")
+
+        players = [_make_mock_player("Anthony Davis", "PF", "LAL", 92, "freeagents")]
+        query = _make_mock_query(players)
+        tool = WaiverWireTool(query=query, redis_client=redis_client)
+
+        result = tool._get_waiver_wire_players()
+
+        # Should still return live data despite Redis failure
+        assert "Anthony Davis" in result
+        query.query.assert_called()
 
     def test_get_waiver_wire_players_no_redis_always_fetches(self):
         from agents.tools.waiver_wire import WaiverWireTool

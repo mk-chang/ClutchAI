@@ -1,5 +1,5 @@
 import json
-from typing import List, Optional
+from typing import List
 from langchain_core.tools import tool
 
 from .base import ClutchAITool
@@ -81,17 +81,23 @@ class WaiverWireTool(ClutchAITool):
     def _get_waiver_wire_players(self, limit: int = 50) -> str:
         """Return free agents as JSON string, using Redis cache when available."""
         if self.redis_client is not None:
-            cached = self.redis_client.get(self._cache_key())
-            if cached:
-                logger.debug("Waiver wire cache hit")
-                return cached
+            try:
+                cached = self.redis_client.get(self._cache_key())
+                if cached:
+                    logger.debug("Waiver wire cache hit")
+                    return cached
+            except Exception as e:
+                logger.warning(f"Redis cache read failed, fetching live: {e}")
 
         players = self._fetch_free_agents(limit=limit)
         result = json.dumps(players, indent=2)
 
         if self.redis_client is not None:
-            self.redis_client.setex(self._cache_key(), _CACHE_TTL, result)
-            logger.debug(f"Cached {len(players)} free agents (TTL={_CACHE_TTL}s)")
+            try:
+                self.redis_client.setex(self._cache_key(), _CACHE_TTL, result)
+                logger.debug(f"Cached {len(players)} free agents (TTL={_CACHE_TTL}s)")
+            except Exception as e:
+                logger.warning(f"Redis cache write failed: {e}")
 
         return result
 
@@ -102,41 +108,42 @@ class WaiverWireTool(ClutchAITool):
         fetch_free_agents = self._fetch_free_agents
 
         @tool
-        def get_waiver_wire_players(limit: int = 50) -> str:
+        def get_waiver_wire_players() -> str:
             """
             Get available free agents (waiver wire players) in the fantasy league.
 
-            Returns a JSON list of free agents with name, position, NBA team,
+            Returns up to 50 free agents with name, position, NBA team,
             percent_owned, and ownership_type. Results are cached for 1 hour.
-
-            Args:
-                limit: Maximum number of players to return (default 50)
 
             Returns:
                 JSON string with list of free agent player objects
             """
-            return _ww_fetch(limit=limit)
+            return _ww_fetch(limit=50)
 
         @tool
-        def refresh_waiver_wire_cache(limit: int = 50) -> str:
+        def refresh_waiver_wire_cache() -> str:
             """
             Force a fresh fetch of waiver wire players from Yahoo, bypassing the Redis cache.
 
             Use this when you need up-to-date data after recent roster moves.
-
-            Args:
-                limit: Maximum number of players to fetch (default 50)
+            Always fetches up to 50 players.
 
             Returns:
                 JSON string with updated list of free agent player objects
             """
             if redis_client is not None:
-                redis_client.delete(cache_key())
-                logger.info("Waiver wire cache cleared")
-            players = fetch_free_agents(limit=limit)
+                try:
+                    redis_client.delete(cache_key())
+                    logger.info("Waiver wire cache cleared")
+                except Exception as e:
+                    logger.warning(f"Redis cache delete failed: {e}")
+            players = fetch_free_agents(limit=50)
             result = json.dumps(players, indent=2)
             if redis_client is not None:
-                redis_client.setex(cache_key(), _CACHE_TTL, result)
+                try:
+                    redis_client.setex(cache_key(), _CACHE_TTL, result)
+                except Exception as e:
+                    logger.warning(f"Redis cache write failed: {e}")
             return result
 
         return [get_waiver_wire_players, refresh_waiver_wire_cache]
