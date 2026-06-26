@@ -13,8 +13,7 @@ def _make_mock_player(name, position, team, percent_owned, ownership_type="freea
     return player
 
 
-def _make_mock_query(players_batch):
-    """Return a mock YahooFantasySportsQuery that returns players_batch then raises."""
+def _make_mock_query(players_batch, tx_id=10):
     query = MagicMock()
     query.get_league_key.return_value = "466.l.58930"
 
@@ -24,9 +23,14 @@ def _make_mock_query(players_batch):
         call_count[0] += 1
         if call_count[0] == 1:
             return players_batch
-        raise Exception("No more players")  # triggers pagination stop
+        raise Exception("No more players")
 
     query.query.side_effect = fake_query
+
+    mock_tx = MagicMock()
+    mock_tx.transaction_id = tx_id
+    query.get_league_transactions.return_value = [mock_tx]
+
     return query
 
 
@@ -36,78 +40,90 @@ class TestWaiverWireTool:
         from agents.tools.waiver_wire import WaiverWireTool
 
         players = [
-            _make_mock_player("Nikola Jokic", "C", "DEN", 99, "team"),
-            _make_mock_player("Josh Hart", "SF", "NYK", 45, "freeagents"),
+            _make_mock_player("Josh Hart", "SF", "NYK", 45),
+            _make_mock_player("Devin Booker", "SG", "PHX", 88),
         ]
         query = _make_mock_query(players)
-        tool = WaiverWireTool(query=query, redis_client=None)
+        tool = WaiverWireTool(query=query, connection=None)
 
-        result = tool._fetch_free_agents(limit=25)
+        result = tool._fetch_free_agents(limit=50)
 
         assert isinstance(result, list)
         assert len(result) == 2
-        assert result[0]["name"] == "Nikola Jokic"
-        assert result[1]["percent_owned"] == 45
+        assert result[0]["name"] == "Josh Hart"
+        assert result[1]["percent_owned"] == 88
 
-    def test_get_waiver_wire_players_uses_redis_cache(self):
+    def test_get_latest_tx_id_returns_max_id(self):
         from agents.tools.waiver_wire import WaiverWireTool
-
-        cached_data = json.dumps([{"name": "Cached Player", "position": "PG", "team": "LAL", "percent_owned": 20, "ownership_type": "freeagents"}])
-        redis_client = MagicMock()
-        redis_client.get.return_value = cached_data
 
         query = MagicMock()
         query.get_league_key.return_value = "466.l.58930"
-        tool = WaiverWireTool(query=query, redis_client=redis_client)
+        tx1, tx2 = MagicMock(), MagicMock()
+        tx1.transaction_id = 5
+        tx2.transaction_id = 12
+        query.get_league_transactions.return_value = [tx1, tx2]
 
-        result = tool._get_waiver_wire_players(limit=50)
+        tool = WaiverWireTool(query=query, connection=None)
+        assert tool._get_latest_tx_id() == 12
 
-        redis_client.get.assert_called_once_with("clutchai:waiver_wire:466.l.58930")
+    def test_get_latest_tx_id_returns_none_on_failure(self):
+        from agents.tools.waiver_wire import WaiverWireTool
+
+        query = MagicMock()
+        query.get_league_key.return_value = "466.l.58930"
+        query.get_league_transactions.side_effect = Exception("API error")
+
+        tool = WaiverWireTool(query=query, connection=None)
+        assert tool._get_latest_tx_id() is None
+
+    def test_get_waiver_wire_players_uses_store_on_cache_hit(self):
+        from agents.tools.waiver_wire import WaiverWireTool
+
+        cached_players = [{"name": "Cached Player", "position": "PG", "team": "LAL",
+                           "percent_owned": 20, "ownership_type": "freeagents"}]
+        mock_store = MagicMock()
+        mock_store.get.return_value = {"players": cached_players, "last_tx_id": 10}
+
+        query = _make_mock_query([], tx_id=10)
+
+        with patch("agents.tools.waiver_wire.WaiverWireStore", return_value=mock_store):
+            tool = WaiverWireTool(query=query, connection=MagicMock())
+
+        result = tool._get_waiver_wire_players()
+
+        mock_store.get.assert_called_once_with("466.l.58930")
         query.query.assert_not_called()
         assert "Cached Player" in result
 
-    def test_get_waiver_wire_players_populates_cache_on_miss(self):
+    def test_get_waiver_wire_players_refetches_on_new_transaction(self):
         from agents.tools.waiver_wire import WaiverWireTool
 
-        redis_client = MagicMock()
-        redis_client.get.return_value = None  # cache miss
+        cached_players = [{"name": "Old Player", "position": "PG", "team": "LAL",
+                           "percent_owned": 20, "ownership_type": "freeagents"}]
+        mock_store = MagicMock()
+        mock_store.get.return_value = {"players": cached_players, "last_tx_id": 9}
 
-        players = [_make_mock_player("Devin Booker", "SG", "PHX", 88, "freeagents")]
-        query = _make_mock_query(players)
-        tool = WaiverWireTool(query=query, redis_client=redis_client)
+        new_players = [_make_mock_player("New Player", "SG", "BOS", 55)]
+        query = _make_mock_query(new_players, tx_id=10)
+
+        with patch("agents.tools.waiver_wire.WaiverWireStore", return_value=mock_store):
+            tool = WaiverWireTool(query=query, connection=MagicMock())
 
         result = tool._get_waiver_wire_players()
 
-        redis_client.setex.assert_called_once()
-        call_args = redis_client.setex.call_args
-        assert call_args[0][0] == "clutchai:waiver_wire:466.l.58930"
-        assert call_args[0][1] == 3600
-        assert "Devin Booker" in result
-
-    def test_redis_read_failure_falls_back_to_live(self):
-        from agents.tools.waiver_wire import WaiverWireTool
-
-        redis_client = MagicMock()
-        redis_client.get.side_effect = Exception("Redis connection lost")
-
-        players = [_make_mock_player("Anthony Davis", "PF", "LAL", 92, "freeagents")]
-        query = _make_mock_query(players)
-        tool = WaiverWireTool(query=query, redis_client=redis_client)
-
-        result = tool._get_waiver_wire_players()
-
-        # Should still return live data despite Redis failure
-        assert "Anthony Davis" in result
         query.query.assert_called()
+        assert mock_store.put.call_args[0][0] == "466.l.58930"
+        assert mock_store.put.call_args[0][2] == 10
+        assert "New Player" in result
 
-    def test_get_waiver_wire_players_no_redis_always_fetches(self):
+    def test_get_waiver_wire_players_no_connection_always_fetches(self):
         from agents.tools.waiver_wire import WaiverWireTool
 
-        players = [_make_mock_player("Jaylen Brown", "SF", "BOS", 75, "freeagents")]
+        players = [_make_mock_player("Jaylen Brown", "SF", "BOS", 75)]
         query = _make_mock_query(players)
-        tool = WaiverWireTool(query=query, redis_client=None)
+        tool = WaiverWireTool(query=query, connection=None)
 
-        result = tool._get_waiver_wire_players(limit=50)
+        result = tool._get_waiver_wire_players()
 
         assert "Jaylen Brown" in result
 
@@ -116,7 +132,7 @@ class TestWaiverWireTool:
 
         query = MagicMock()
         query.get_league_key.return_value = "466.l.58930"
-        tool = WaiverWireTool(query=query, redis_client=None)
+        tool = WaiverWireTool(query=query, connection=None)
 
         tools = tool.get_all_tools()
         tool_names = [t.name for t in tools]
