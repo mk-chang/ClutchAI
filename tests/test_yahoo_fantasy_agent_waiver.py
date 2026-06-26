@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 
 def test_yahoo_fantasy_agent_includes_waiver_wire_tools():
-    """WaiverWireTool should be instantiated with query + redis_client."""
+    """WaiverWireTool should be instantiated with query + connection."""
     with patch("agents.multi_agent.yahoo_fantasy_agent.WaiverWireTool") as MockWaiver, \
          patch("agents.multi_agent.yahoo_fantasy_agent.YahooFantasyTool") as MockYahoo, \
          patch("agents.multi_agent.base_agent.BasicTool") as MockBasic, \
@@ -23,21 +23,21 @@ def test_yahoo_fantasy_agent_includes_waiver_wire_tools():
         MockBasic.return_value = mock_basic
 
         mock_query = MagicMock()
-        mock_redis = MagicMock()
+        mock_connection = MagicMock()
 
         from agents.multi_agent.yahoo_fantasy_agent import YahooFantasyAgent
         agent = YahooFantasyAgent(
             query=mock_query,
-            redis_client=mock_redis,
+            connection=mock_connection,
             openai_api_key="test-key",
         )
 
-    MockWaiver.assert_called_once_with(query=mock_query, redis_client=mock_redis, debug=False)
+    MockWaiver.assert_called_once_with(query=mock_query, connection=mock_connection, debug=False)
     mock_ww.get_all_tools.assert_called_once()
 
 
-def test_yahoo_fantasy_agent_no_redis_still_loads_waiver_wire():
-    """WaiverWireTool should be added even without redis_client (caching disabled but tool still works)."""
+def test_yahoo_fantasy_agent_no_connection_still_loads_waiver_wire():
+    """WaiverWireTool should load even without connection (caching disabled)."""
     with patch("agents.multi_agent.yahoo_fantasy_agent.WaiverWireTool") as MockWaiver, \
          patch("agents.multi_agent.yahoo_fantasy_agent.YahooFantasyTool") as MockYahoo, \
          patch("agents.multi_agent.base_agent.BasicTool") as MockBasic, \
@@ -62,8 +62,8 @@ def test_yahoo_fantasy_agent_no_redis_still_loads_waiver_wire():
         from agents.multi_agent.yahoo_fantasy_agent import YahooFantasyAgent
         agent = YahooFantasyAgent(
             query=mock_query,
-            redis_client=None,
+            connection=None,
             openai_api_key="test-key",
         )
 
-    MockWaiver.assert_called_once_with(query=mock_query, redis_client=None, debug=False)
+    MockWaiver.assert_called_once_with(query=mock_query, connection=None, debug=False)

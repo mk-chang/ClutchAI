@@ -24,8 +24,8 @@ class YahooFantasyAgent(BaseAgent):
     Yahoo Fantasy Agent that specializes in Yahoo Fantasy API data.
     """
 
-    def __init__(self, redis_client=None, **kwargs):
-        self._redis_client = redis_client
+    def __init__(self, connection=None, **kwargs):
+        self._connection = connection
         super().__init__(**kwargs)
 
     def _get_config_section(self) -> str:
@@ -62,7 +62,7 @@ Be thorough and provide structured data that can be easily analyzed."""
                 self.logger.warning(f"Yahoo Fantasy tools not available: {e}")
 
             try:
-                waiver_tool = WaiverWireTool(query=self.query, redis_client=self._redis_client, debug=self.debug)
+                waiver_tool = WaiverWireTool(query=self.query, connection=self._connection, debug=self.debug)
                 tools.extend(waiver_tool.get_all_tools())
                 self.logger.debug("Waiver wire tools loaded")
             except Exception as e:
