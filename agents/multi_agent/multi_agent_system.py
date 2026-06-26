@@ -26,7 +26,6 @@ from agents.multi_agent.user_context import UserContextGatherer
 from agents.rag.rag_manager import RAGManager
 from data.postgres.connection import PostgresConnection
 from data.postgres.schema import get_default_table_name
-from data.redis.connection import RedisConnection
 
 logger = get_logger(__name__)
 
@@ -52,7 +51,6 @@ class MultiAgentSystem:
         temperature: float = 0,  # Not used, but kept for compatibility
         debug: bool = False,
         disable_rag: Optional[bool] = None,
-        redis_url: Optional[str] = None,
     ):
         """
         Initialize the Multi-Agent System.
@@ -133,15 +131,16 @@ class MultiAgentSystem:
                 project_root=self.env_file_location,
             )
         
-        # Initialize Redis client (optional — caching disabled if unavailable)
-        redis_client = None
-        _redis_url = redis_url or os.environ.get("REDIS_URL")
-        if _redis_url:
+        # Postgres connection for waiver wire store
+        ww_connection = None
+        if connection is not None:
+            ww_connection = connection
+        elif os.environ.get("DATABASE_URL"):
             try:
-                redis_client = RedisConnection(redis_url=_redis_url).get_client()
-                logger.info("Redis connected for waiver wire caching")
+                ww_connection = PostgresConnection()
+                logger.debug("Postgres connection ready for waiver wire store")
             except Exception as e:
-                logger.warning(f"Redis not available, waiver wire caching disabled: {e}")
+                logger.warning(f"Postgres not available for waiver wire caching: {e}")
 
         # Store team name
         self.team_name = team_name or "KATmandu Climbers"
@@ -166,7 +165,7 @@ class MultiAgentSystem:
             openai_api_key=self.openai_api_key,
             project_root=self.env_file_location,
             debug=self.debug,
-            redis_client=redis_client,
+            connection=ww_connection,
         )
         
         self.statistic_agent = StatisticAgent(
