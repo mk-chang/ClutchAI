@@ -1,6 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
-import pytest
+from unittest.mock import MagicMock
 
 
 def _make_mock_player(name, position, team, percent_owned, ownership_type="freeagents"):
@@ -13,7 +12,7 @@ def _make_mock_player(name, position, team, percent_owned, ownership_type="freea
     return player
 
 
-def _make_mock_query(players_batch, tx_id=10):
+def _make_mock_query(players_batch):
     query = MagicMock()
     query.get_league_key.return_value = "466.l.58930"
 
@@ -26,11 +25,6 @@ def _make_mock_query(players_batch, tx_id=10):
         raise Exception("No more players")
 
     query.query.side_effect = fake_query
-
-    mock_tx = MagicMock()
-    mock_tx.transaction_id = tx_id
-    query.get_league_transactions.return_value = [mock_tx]
-
     return query
 
 
@@ -44,7 +38,7 @@ class TestWaiverWireTool:
             _make_mock_player("Devin Booker", "SG", "PHX", 88),
         ]
         query = _make_mock_query(players)
-        tool = WaiverWireTool(query=query, connection=None)
+        tool = WaiverWireTool(query=query)
 
         result = tool._fetch_free_agents(limit=50)
 
@@ -53,87 +47,44 @@ class TestWaiverWireTool:
         assert result[0]["name"] == "Josh Hart"
         assert result[1]["percent_owned"] == 88
 
-    def test_get_latest_tx_id_returns_max_id(self):
+    def test_fetch_free_agents_handles_serialization_error(self):
+        from agents.tools.waiver_wire import WaiverWireTool
+
+        bad_player = MagicMock()
+        bad_player.name.full  # raises AttributeError
+        type(bad_player).name = MagicMock(side_effect=AttributeError)
+
+        query = _make_mock_query([bad_player])
+        tool = WaiverWireTool(query=query)
+
+        result = tool._fetch_free_agents(limit=50)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["name"] != ""  # fallback string representation
+
+    def test_get_all_tools_returns_get_waiver_wire_players(self):
         from agents.tools.waiver_wire import WaiverWireTool
 
         query = MagicMock()
         query.get_league_key.return_value = "466.l.58930"
-        tx1, tx2 = MagicMock(), MagicMock()
-        tx1.transaction_id = 5
-        tx2.transaction_id = 12
-        query.get_league_transactions.return_value = [tx1, tx2]
-
-        tool = WaiverWireTool(query=query, connection=None)
-        assert tool._get_latest_tx_id() == 12
-
-    def test_get_latest_tx_id_returns_none_on_failure(self):
-        from agents.tools.waiver_wire import WaiverWireTool
-
-        query = MagicMock()
-        query.get_league_key.return_value = "466.l.58930"
-        query.get_league_transactions.side_effect = Exception("API error")
-
-        tool = WaiverWireTool(query=query, connection=None)
-        assert tool._get_latest_tx_id() is None
-
-    def test_get_waiver_wire_players_uses_store_on_cache_hit(self):
-        from agents.tools.waiver_wire import WaiverWireTool
-
-        cached_players = [{"name": "Cached Player", "position": "PG", "team": "LAL",
-                           "percent_owned": 20, "ownership_type": "freeagents"}]
-        mock_store = MagicMock()
-        mock_store.get.return_value = {"players": cached_players, "last_tx_id": 10}
-
-        query = _make_mock_query([], tx_id=10)
-
-        with patch("agents.tools.waiver_wire.WaiverWireStore", return_value=mock_store):
-            tool = WaiverWireTool(query=query, connection=MagicMock())
-            result = tool._get_waiver_wire_players()
-
-        mock_store.get.assert_called_once_with("466.l.58930")
-        query.query.assert_not_called()
-        assert "Cached Player" in result
-
-    def test_get_waiver_wire_players_refetches_on_new_transaction(self):
-        from agents.tools.waiver_wire import WaiverWireTool
-
-        cached_players = [{"name": "Old Player", "position": "PG", "team": "LAL",
-                           "percent_owned": 20, "ownership_type": "freeagents"}]
-        mock_store = MagicMock()
-        mock_store.get.return_value = {"players": cached_players, "last_tx_id": 9}
-
-        new_players = [_make_mock_player("New Player", "SG", "BOS", 55)]
-        query = _make_mock_query(new_players, tx_id=10)
-
-        with patch("agents.tools.waiver_wire.WaiverWireStore", return_value=mock_store):
-            tool = WaiverWireTool(query=query, connection=MagicMock())
-            result = tool._get_waiver_wire_players()
-
-        query.query.assert_called()
-        assert mock_store.put.call_args[0][0] == "466.l.58930"
-        assert mock_store.put.call_args[0][2] == 10
-        assert "New Player" in result
-
-    def test_get_waiver_wire_players_no_connection_always_fetches(self):
-        from agents.tools.waiver_wire import WaiverWireTool
-
-        players = [_make_mock_player("Jaylen Brown", "SF", "BOS", 75)]
-        query = _make_mock_query(players)
-        tool = WaiverWireTool(query=query, connection=None)
-
-        result = tool._get_waiver_wire_players()
-
-        assert "Jaylen Brown" in result
-
-    def test_get_all_tools_returns_langchain_tools(self):
-        from agents.tools.waiver_wire import WaiverWireTool
-
-        query = MagicMock()
-        query.get_league_key.return_value = "466.l.58930"
-        tool = WaiverWireTool(query=query, connection=None)
+        tool = WaiverWireTool(query=query)
 
         tools = tool.get_all_tools()
         tool_names = [t.name for t in tools]
 
         assert "get_waiver_wire_players" in tool_names
-        assert "refresh_waiver_wire_cache" in tool_names
+        assert len(tools) == 1
+
+    def test_get_waiver_wire_players_returns_json(self):
+        from agents.tools.waiver_wire import WaiverWireTool
+
+        players = [_make_mock_player("Jaylen Brown", "SF", "BOS", 75)]
+        query = _make_mock_query(players)
+        tool = WaiverWireTool(query=query)
+
+        tools = tool.get_all_tools()
+        result = tools[0].invoke({})
+
+        data = json.loads(result)
+        assert isinstance(data, list)
+        assert data[0]["name"] == "Jaylen Brown"

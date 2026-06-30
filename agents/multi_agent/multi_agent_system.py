@@ -131,17 +131,6 @@ class MultiAgentSystem:
                 project_root=self.env_file_location,
             )
         
-        # Postgres connection for waiver wire store
-        ww_connection = None
-        if connection is not None:
-            ww_connection = connection
-        elif os.environ.get("DATABASE_URL"):
-            try:
-                ww_connection = PostgresConnection()
-                logger.debug("Postgres connection ready for waiver wire store")
-            except Exception as e:
-                logger.warning(f"Postgres not available for waiver wire caching: {e}")
-
         # Store team name
         self.team_name = team_name or "KATmandu Climbers"
         
@@ -165,7 +154,6 @@ class MultiAgentSystem:
             openai_api_key=self.openai_api_key,
             project_root=self.env_file_location,
             debug=self.debug,
-            connection=ww_connection,
         )
         
         self.statistic_agent = StatisticAgent(
