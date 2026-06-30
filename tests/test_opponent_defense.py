@@ -1,19 +1,19 @@
 import pandas as pd
 from unittest.mock import MagicMock, patch
 
-from data.postgres.opponent_defense import OpponentDefenseManager, _compute_ranks
+from data.postgres.opponent_defense import OpponentDefenseManager, _compute_ranks, _get_team_abbreviation_map
 
 
 # --- _compute_ranks ---
 
 _T1 = {
-    'TEAM_ID': 1610612738, 'TEAM_ABBREVIATION': 'BOS',
+    'TEAM_ID': 1610612738,
     'OPP_PTS': 105.0, 'OPP_REB': 42.0, 'OPP_AST': 24.0,
     'OPP_STL': 7.0,   'OPP_BLK': 4.0,  'OPP_TOV': 14.0,
     'OPP_FG_PCT': 0.44, 'OPP_FG3_PCT': 0.33,
 }
 _T2 = {
-    'TEAM_ID': 1610612737, 'TEAM_ABBREVIATION': 'ATL',
+    'TEAM_ID': 1610612737,
     'OPP_PTS': 115.0, 'OPP_REB': 46.0, 'OPP_AST': 28.0,
     'OPP_STL': 8.0,   'OPP_BLK': 5.0,  'OPP_TOV': 12.0,
     'OPP_FG_PCT': 0.48, 'OPP_FG3_PCT': 0.37,
@@ -28,16 +28,32 @@ def test_compute_ranks_adds_all_rank_columns():
 def test_compute_ranks_pts_lower_allowed_is_rank1():
     df = pd.DataFrame([_T1, _T2])
     result = _compute_ranks(df)
-    # BOS allows 105 pts (less than ATL's 115), so BOS = rank 1 (best defense)
-    bos_rank = result[result['TEAM_ABBREVIATION'] == 'BOS'].iloc[0]['rank_pts']
+    # BOS (1610612738) allows 105 pts (less than ATL's 115), so BOS = rank 1 (best defense)
+    bos_rank = result[result['TEAM_ID'] == 1610612738].iloc[0]['rank_pts']
     assert bos_rank == 1
 
 def test_compute_ranks_to_more_forced_is_rank1():
     df = pd.DataFrame([_T1, _T2])
     result = _compute_ranks(df)
-    # BOS forces 14 TOV (more than ATL's 12), so BOS = rank 1 for rank_to
-    bos_rank = result[result['TEAM_ABBREVIATION'] == 'BOS'].iloc[0]['rank_to']
+    # BOS (1610612738) forces 14 TOV (more than ATL's 12), so BOS = rank 1 for rank_to
+    bos_rank = result[result['TEAM_ID'] == 1610612738].iloc[0]['rank_to']
     assert bos_rank == 1
+
+
+# --- _get_team_abbreviation_map ---
+
+def test_get_team_abbreviation_map_returns_dict_with_int_keys_and_str_values():
+    mock_teams = [
+        {'id': 1610612738, 'abbreviation': 'BOS'},
+        {'id': 1610612737, 'abbreviation': 'ATL'},
+    ]
+    with patch('data.postgres.opponent_defense.nba_teams.get_teams', return_value=mock_teams):
+        result = _get_team_abbreviation_map()
+    assert isinstance(result, dict)
+    assert result == {1610612738: 'BOS', 1610612737: 'ATL'}
+    for team_id, abbr in result.items():
+        assert isinstance(team_id, int)
+        assert isinstance(abbr, str)
 
 
 # --- helpers ---
@@ -76,7 +92,8 @@ def test_fetch_and_upsert_calls_league_dash_team_stats():
     mock_ep = MagicMock()
     mock_ep.get_data_frames.return_value = [pd.DataFrame([_T1, _T2])]
     with patch('data.postgres.opponent_defense.leaguedashteamstats.LeagueDashTeamStats', return_value=mock_ep) as mock_cls:
-        mgr.fetch_and_upsert('2025-26')
+        with patch('data.postgres.opponent_defense._get_team_abbreviation_map', return_value={1610612738: 'BOS', 1610612737: 'ATL'}):
+            mgr.fetch_and_upsert('2025-26')
     mock_cls.assert_called_once()
 
 def test_fetch_and_upsert_returns_row_count():
@@ -84,13 +101,15 @@ def test_fetch_and_upsert_returns_row_count():
     mock_ep = MagicMock()
     mock_ep.get_data_frames.return_value = [pd.DataFrame([_T1, _T2])]
     with patch('data.postgres.opponent_defense.leaguedashteamstats.LeagueDashTeamStats', return_value=mock_ep):
-        assert mgr.fetch_and_upsert('2025-26') == 2
+        with patch('data.postgres.opponent_defense._get_team_abbreviation_map', return_value={1610612738: 'BOS', 1610612737: 'ATL'}):
+            assert mgr.fetch_and_upsert('2025-26') == 2
 
 def test_fetch_and_upsert_sql_has_on_conflict():
     mgr, mock_conn = _make_manager()
     mock_ep = MagicMock()
     mock_ep.get_data_frames.return_value = [pd.DataFrame([_T1])]
     with patch('data.postgres.opponent_defense.leaguedashteamstats.LeagueDashTeamStats', return_value=mock_ep):
-        mgr.fetch_and_upsert('2025-26')
+        with patch('data.postgres.opponent_defense._get_team_abbreviation_map', return_value={1610612738: 'BOS'}):
+            mgr.fetch_and_upsert('2025-26')
     sql = mock_conn.execute.call_args[0][0].text
     assert 'ON CONFLICT' in sql
