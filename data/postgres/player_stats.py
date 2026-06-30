@@ -26,11 +26,17 @@ _PG_VALUE_COLS  = ['rv', 'three_v', 'pv']
 _TOT_VALUE_COLS = ['rv', 'three_v']
 _P36_VALUE_COLS = ['rv', 'three_v', 'pv']
 
+_STD_DEV_COLS = [
+    'std_dev_pts', 'std_dev_reb', 'std_dev_ast', 'std_dev_stl', 'std_dev_blk',
+    'std_dev_to', 'std_dev_fgp', 'std_dev_3pp', 'std_dev_ftp',
+]
+
 
 def _make_create_sql(table: str, stat_cols: list, value_cols: list) -> text:
-    stat_ddl  = ',\n        '.join(f'{c.lower()} FLOAT' for c in stat_cols)
-    z_ddl     = ',\n        '.join(f'{c} FLOAT' for c in _Z_COLS)
-    value_ddl = ',\n        '.join(f'{c} FLOAT' for c in value_cols)
+    stat_ddl     = ',\n        '.join(f'{c.lower()} FLOAT' for c in stat_cols)
+    z_ddl        = ',\n        '.join(f'{c} FLOAT' for c in _Z_COLS)
+    value_ddl    = ',\n        '.join(f'{c} FLOAT' for c in value_cols)
+    std_dev_ddl  = ',\n        '.join(f'{c} FLOAT' for c in _STD_DEV_COLS)
     return text(f"""
         CREATE TABLE IF NOT EXISTS {table} (
             player_id         INTEGER      NOT NULL,
@@ -42,6 +48,7 @@ def _make_create_sql(table: str, stat_cols: list, value_cols: list) -> text:
             {stat_ddl},
             {z_ddl},
             {value_ddl},
+            {std_dev_ddl},
             updated_at        TIMESTAMP DEFAULT NOW(),
             PRIMARY KEY (player_id, season)
         )
@@ -86,6 +93,20 @@ _CREATE_P36   = _make_create_sql(_P36_TABLE, _P36_STAT_COLS, _P36_VALUE_COLS)
 _UPSERT_PG    = _make_upsert_sql(_PG_TABLE,  _STAT_COLS,     _PG_VALUE_COLS)
 _UPSERT_TOT   = _make_upsert_sql(_TOT_TABLE, _STAT_COLS,     _TOT_VALUE_COLS)
 _UPSERT_P36   = _make_upsert_sql(_P36_TABLE, _P36_STAT_COLS, _P36_VALUE_COLS)
+
+
+def migrate_std_dev_cols(connection: PostgresConnection) -> bool:
+    """Add std dev columns to existing aggregate tables. Safe to run multiple times."""
+    adds = ', '.join(f'ADD COLUMN IF NOT EXISTS {c} FLOAT' for c in _STD_DEV_COLS)
+    try:
+        with connection.get_engine().connect() as conn:
+            for table in [_PG_TABLE, _TOT_TABLE, _P36_TABLE]:
+                conn.execute(text(f'ALTER TABLE {table} {adds}'))
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to migrate std dev columns: {e}")
+        return False
 
 
 # --- Season utilities ---
@@ -182,3 +203,29 @@ class PlayerStatsManager:
             'tot': self.upsert_total(tot, season),
             'p36': self.upsert_p36(p36, season),
         }
+
+    def update_std_devs(self, std_devs: dict, season: str) -> int:
+        """Write std dev values back to all 3 aggregate tables.
+
+        Args:
+            std_devs: {player_id: {std_dev_pts, std_dev_reb, std_dev_ast, std_dev_stl,
+                                   std_dev_blk, std_dev_to, std_dev_fgp, std_dev_3pp,
+                                   std_dev_ftp: float}}
+        Returns: Number of players updated.
+        """
+        if not std_devs:
+            return 0
+        set_clause = ', '.join(f'{c} = :{c}' for c in _STD_DEV_COLS)
+        sqls = {
+            t: text(f'UPDATE {t} SET {set_clause}, updated_at = NOW() WHERE player_id = :player_id AND season = :season')
+            for t in [_PG_TABLE, _TOT_TABLE, _P36_TABLE]
+        }
+        updated = 0
+        with self.connection.get_engine().connect() as conn:
+            for player_id, devs in std_devs.items():
+                params = {'player_id': player_id, 'season': season, **devs}
+                for sql in sqls.values():
+                    conn.execute(sql, params)
+                updated += 1
+            conn.commit()
+        return updated
