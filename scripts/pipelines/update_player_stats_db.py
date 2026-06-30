@@ -24,6 +24,7 @@ def run(target_date: date = None) -> None:
     yesterday = today - timedelta(days=1)
     season = current_season(today)
     conn = PostgresConnection()
+    migrate_std_dev_cols(conn)
 
     game_logs_mgr = PlayerGameLogsManager(conn)
     game_logs_mgr.create_table()
@@ -41,8 +42,6 @@ def run(target_date: date = None) -> None:
 
     std_devs = game_logs_mgr.compute_std_dev(season)
     stats_mgr.update_std_devs(std_devs, season)
-
-    migrate_std_dev_cols(conn)
 
     if today.weekday() == 0:
         defense_mgr = OpponentDefenseManager(conn)

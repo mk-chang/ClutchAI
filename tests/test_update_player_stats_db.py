@@ -19,8 +19,9 @@ def _run(target_date, game_logs, schedule, stats, defense):
             with patch('scripts.pipelines.update_player_stats_db.PlayerStatsManager', return_value=stats):
                 with patch('scripts.pipelines.update_player_stats_db.OpponentDefenseManager', return_value=defense):
                     with patch('scripts.pipelines.update_player_stats_db.PostgresConnection'):
-                        from scripts.pipelines.update_player_stats_db import run
-                        run(target_date)
+                        with patch('scripts.pipelines.update_player_stats_db.migrate_std_dev_cols'):
+                            from scripts.pipelines.update_player_stats_db import run
+                            run(target_date)
 
 
 def test_run_skips_in_offseason():
@@ -67,3 +68,15 @@ def test_run_ensures_schedule_loaded():
     game_logs, schedule, stats, defense = _make_mocks()
     _run(date(2026, 3, 15), game_logs, schedule, stats, defense)
     schedule.ensure_loaded.assert_called_once()
+
+def test_run_migrates_std_dev_schema():
+    game_logs, schedule, stats, defense = _make_mocks()
+    with patch('scripts.pipelines.update_player_stats_db.PlayerGameLogsManager', return_value=game_logs), \
+         patch('scripts.pipelines.update_player_stats_db.TeamScheduleManager', return_value=schedule), \
+         patch('scripts.pipelines.update_player_stats_db.PlayerStatsManager', return_value=stats), \
+         patch('scripts.pipelines.update_player_stats_db.OpponentDefenseManager', return_value=defense), \
+         patch('scripts.pipelines.update_player_stats_db.PostgresConnection'), \
+         patch('scripts.pipelines.update_player_stats_db.migrate_std_dev_cols') as mock_migrate:
+        from scripts.pipelines.update_player_stats_db import run
+        run(date(2026, 3, 15))
+    mock_migrate.assert_called_once()
