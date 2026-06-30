@@ -59,8 +59,9 @@ Be thorough and provide structured data that can be easily analyzed."""
 
             try:
                 waiver_tool = WaiverWireTool(query=self.query, debug=self.debug)
-                tools.extend(waiver_tool.get_all_tools())
-                self.logger.debug("Waiver wire tools loaded")
+                self.waiver_wire_cache = waiver_tool._fetch_free_agents(limit=50)
+                tools.extend(waiver_tool.get_all_tools(cache=self.waiver_wire_cache))
+                self.logger.debug(f"Waiver wire cached: {len(self.waiver_wire_cache)} players")
             except Exception as e:
                 self.logger.warning(f"Waiver wire tools not available: {e}")
 

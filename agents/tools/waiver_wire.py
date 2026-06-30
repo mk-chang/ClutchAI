@@ -59,8 +59,8 @@ class WaiverWireTool(ClutchAITool):
         logger.info(f"Fetched {len(players)} free agents from Yahoo API")
         return players
 
-    def get_all_tools(self) -> list:
-        fetch_free_agents = self._fetch_free_agents
+    def get_all_tools(self, cache: list = None) -> list:
+        data = cache if cache is not None else self._fetch_free_agents(limit=50)
 
         @tool
         def get_waiver_wire_players() -> str:
@@ -68,11 +68,11 @@ class WaiverWireTool(ClutchAITool):
             Get available free agents (waiver wire players) in the fantasy league.
 
             Returns up to 50 free agents with name, position, NBA team,
-            percent_owned, and ownership_type. Always fetches live from Yahoo.
+            percent_owned, and ownership_type.
 
             Returns:
                 JSON string with list of free agent player objects
             """
-            return json.dumps(fetch_free_agents(limit=50), indent=2)
+            return json.dumps(data, indent=2)
 
         return [get_waiver_wire_players]
