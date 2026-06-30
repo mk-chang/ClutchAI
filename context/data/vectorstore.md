@@ -46,6 +46,16 @@ YouTube blocks IP after ~17 videos in one session. Mitigations:
 - Backlog: 655 LockedOn videos (~15/run → ~44 hrs to complete from 2026-05-25)
 - Switch to weekly (`0 3 * * 0`) once backlog is done
 
+## Transcript/Article Cleaning
+
+Added LLM-based cleaning step before vectorstore ingestion (2026-05-26):
+- `BaseVectorManager._run_cleaning(docs, prompt, model)` — shared mechanics, always logs `Cleaned: X → Y chunks | A → B chars`
+- `YoutubeVectorManager._clean_documents()` — removes ads, sponsor reads, intros, outros, social plugs
+- `ArticleVectorManager._clean_documents()` — removes nav, cookie notices, newsletter prompts, paywalls
+- `DEV_MODE=true` → also logs first 3 chunks before + each removed chunk (preview 150 chars)
+- Fallback: any LLM error → returns raw docs, logs warning
+
 ## Pipeline Run Notes
 
+- 2026-05-26: Transcript cleaning feature deployed. 7 commits on main (not yet pushed to origin).
 - 2026-05-25: Static knowledge (knowledge_base.yaml) loaded. LockedOn backlog ingestion started via hourly cron.

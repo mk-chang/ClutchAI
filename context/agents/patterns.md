@@ -43,4 +43,5 @@ The supervisor calls `get_current_datetime` first for date-sensitive queries.
 
 ## Known Patterns / Lessons Learned
 
-_Update this section as you work on the project._
+- **WaiverWireTool** added to `YahooFantasyAgent` — fetches FA list from Yahoo API, persists to Postgres (`waiver_wire_cache` table) with 1-hour TTL. Yahoo API call is expensive (~2-3s); cache eliminates repeat hits.
+- **Planned: SQL tools for StatsAgent** — hybrid approach: pre-built tools (`get_recent_form`, `get_schedule_density`, `get_season_trends`) + raw `query_stats_db(sql)` fallback. See player stats DB design session.

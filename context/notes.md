@@ -4,6 +4,16 @@ _Running log of non-obvious decisions, debugging findings, and things to remembe
 
 ---
 
+## 2026-05-26
+
+- `RAILWAY_TOKEN` in `~/.claude/settings.json` `env` block eliminates Railway MCP session expiry — no more `railway login` + reload needed
+- Railway services are project-level; can't remove a service from one environment only — use `cron_schedule: 0 0 1 1 *` to effectively disable a cron in staging
+- Railway staging branch must be set manually in dashboard (Settings → Source) — MCP `update_service` has no branch parameter
+- `_clean_documents` tests patch `data.postgres.vector_managers.base.OpenAI` — requires module-level import in `base.py`, not a local import inside the method
+- Template method pattern for cleaning: `_run_cleaning` in base handles LLM mechanics; each manager owns its `_clean_documents` prompt
+
+---
+
 ## 2026-05-25
 
 - Railway cron `&&` in start command is not interpreted — Railway doesn't wrap in a shell; use `bash -c "cmd1 && cmd2"` or a single Python script
