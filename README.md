@@ -216,6 +216,49 @@ graph TD
 - **NBA API Tools**: Player stats, team stats, game scores, box scores, play-by-play
 - **Vectorstore Retriever**: Semantic search over YouTube transcripts and articles
 
+## 📊 Data Pipelines
+
+### Waiver Wire Cache
+
+Waiver wire data is persisted in Postgres (`waiver_wire_cache` table) and invalidated by transaction ID — not by time. This means the cache never expires unless an actual roster move happens.
+
+**How it works:**
+
+Every time the agent answers a waiver wire question:
+
+1. **Transaction check** — fetch `get_league_transactions()` from Yahoo (one fast call). Find the highest `transaction_id`.
+2. **Cache lookup** — query `waiver_wire_cache` for the stored player list and its `last_tx_id`.
+3. **Compare:**
+   - IDs match → return cached players instantly, no Yahoo API call
+   - IDs differ → someone made a roster move; re-fetch all free agents from Yahoo, update the DB
+   - Transaction fetch failed (rate limit, outage) → serve cached data rather than burn an API call
+4. **Re-fetch** — paginates Yahoo's free agent endpoint (`status=FA`) 25 players at a time up to 50 total, storing name, position, team, and % owned.
+
+Data persists across restarts with no TTL. `refresh_waiver_wire_cache` forces a re-fetch by deleting the DB row and triggering a fresh pull on the next query.
+
+---
+
+### Player Stats (Daily Cron)
+
+NBA player stats are pulled from the NBA API and stored in three Postgres tables:
+
+| Table | Description |
+|-------|-------------|
+| `bball_monsters_player_stats_pg` | Per-game averages |
+| `bball_monsters_player_stats_total` | Season totals |
+| `bball_monsters_player_stats_p36` | Per-36 minutes |
+
+Each table stores raw stats plus BBM-style z-scores (`pV`, `rV`, `aV`, `sV`, `bV`, `pts3V`, `toV`, `fgV`, `ftV`) and composite value metrics (`value` = sum of z-scores, `three_v` = 3-point value, `pv` = Yahoo points value).
+
+**How the daily update works (`scripts/pipelines/update_player_stats.py`):**
+
+1. **Off-season check** — exits early July–September (no games, no update needed)
+2. **Fetch** — pulls current-season stats from the NBA API via `LeagueDashPlayerStats`
+3. **Upsert** — writes all three tables (`pg`, `total`, `p36`) using `ON CONFLICT DO UPDATE` on `(player_id, season)`
+4. **Value calculation** — `PlayerValueCalculator` computes z-scores across all players for each stat category, then writes them back to each table
+
+The cron runs daily on Railway. `is_nba_season()` gates execution so it only runs October–June.
+
 ## 🔒 Security
 
 - API keys are stored locally in `.env` file (never committed to git)
