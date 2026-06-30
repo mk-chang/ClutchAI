@@ -108,6 +108,7 @@ class WaiverWireTool(ClutchAITool):
             try:
                 cached = self.store.get(league_key)
                 if cached:
+                    # None means transaction fetch failed — serve cache rather than burn an API call
                     if latest_tx_id is None or cached["last_tx_id"] == latest_tx_id:
                         logger.debug("Waiver wire cache hit")
                         return json.dumps(cached["players"], indent=2)

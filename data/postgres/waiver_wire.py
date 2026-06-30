@@ -27,7 +27,7 @@ class WaiverWireStore:
                 )
             """))
             conn.commit()
-        logger.info(f"Table '{self.TABLE}' ready")
+        logger.debug(f"Table '{self.TABLE}' ready")
 
     def get(self, league_key: str) -> Optional[dict]:
         """Return {'players': [...], 'last_tx_id': int|None} or None if no row."""

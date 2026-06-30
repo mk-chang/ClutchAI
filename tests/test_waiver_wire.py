@@ -88,8 +88,7 @@ class TestWaiverWireTool:
 
         with patch("agents.tools.waiver_wire.WaiverWireStore", return_value=mock_store):
             tool = WaiverWireTool(query=query, connection=MagicMock())
-
-        result = tool._get_waiver_wire_players()
+            result = tool._get_waiver_wire_players()
 
         mock_store.get.assert_called_once_with("466.l.58930")
         query.query.assert_not_called()
@@ -108,8 +107,7 @@ class TestWaiverWireTool:
 
         with patch("agents.tools.waiver_wire.WaiverWireStore", return_value=mock_store):
             tool = WaiverWireTool(query=query, connection=MagicMock())
-
-        result = tool._get_waiver_wire_players()
+            result = tool._get_waiver_wire_players()
 
         query.query.assert_called()
         assert mock_store.put.call_args[0][0] == "466.l.58930"
