@@ -4,6 +4,21 @@ _Running log of non-obvious decisions, debugging findings, and things to remembe
 
 ---
 
+## 2026-07-01
+
+- LangSmith project was renamed `pr-roasted-deliberation-80` → `clutch-ai` (hyphen). Search `list_projects` with `project_name="clutch"`, not `"clutch_ai"` — underscore won't match.
+- `agents/tools/waiver_wire.py` (WaiverWireTool / `get_waiver_wire_players`) exists on `staging` and `feature/waiver_wire` but is **absent from `feature/player_db` and `main`** — deployed/staging behavior can diverge from what's in this branch's `agents/tools/yahoo_api.py`.
+- `BaseAgent` (base_agent.py) already supports `user_context` end-to-end (constructor param + `_enhance_system_prompt`) for every agent — but `multi_agent_system.py` only wires it into `SupervisorAgent`/`FantasyAnalystAgent`, not `YahooFantasyAgent`/`StatisticAgent`. Giving those two agents the already-known league_key/roster context needs zero new plumbing, just one line at construction.
+
+---
+
+## 2026-06-30
+
+- **Deployment flow:** merge feature branch → staging first, manually verify, then merge to main for production. Never merge a feature branch directly to main.
+- `RAILWAY_TOKEN` does NOT work for Railway MCP auth — never suggest it or add it to settings.json. When MCP returns Unauthorized, tell user to run `railway login` in terminal.
+
+---
+
 ## 2026-05-25
 
 - Railway cron `&&` in start command is not interpreted — Railway doesn't wrap in a shell; use `bash -c "cmd1 && cmd2"` or a single Python script

@@ -19,8 +19,9 @@ Multi-agent fantasy basketball assistant fully deployed on Railway. Supervisor r
 
 ## What's In Progress / Incomplete
 
-- **LockedOn backlog**: 655 YouTube videos ingesting via hourly cron (~15/run, ~44 hrs to complete from 2026-05-25)
+- **LockedOn backlog**: 655 YouTube videos ingesting via hourly cron (~15/run, ~44 hrs to complete from 2026-05-25) — not reconfirmed complete
 - **GCP teardown**: Cloud Run deleted; Cloud SQL + Secret Manager still need manual Console cleanup
+- **Multi-agent workflow fixes (design paused)**: LangSmith review of live conversations found 3 orchestration gaps — Yahoo Fantasy Agent re-discovers league_key from scratch on every call, Analysis Agent is inconsistently invoked for similar queries, and the new PlayerStatsDbTool isn't wired into free-agent recommendations. See `context/sessions/2026-07-01-langsmith-review-and-workflow-brainstorm.md`.
 
 ## Architecture Notes
 
