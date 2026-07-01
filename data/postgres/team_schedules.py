@@ -41,7 +41,7 @@ _UPSERT_SQL = text("""
 """)
 
 
-def _parse_matchup(matchup: str, team_abbr: str) -> tuple:
+def _parse_matchup(matchup: str) -> tuple:
     """Returns (home_away, opponent_abbr) from MATCHUP string like 'BOS vs. MIA' or 'BOS @ MIA'."""
     parts = matchup.split()
     opponent_abbr = parts[-1]
@@ -79,7 +79,7 @@ class TeamScheduleManager:
         ).get_data_frames()[0]
         rows = []
         for _, row in df.iterrows():
-            home_away, opp = _parse_matchup(str(row['MATCHUP']), str(row['TEAM_ABBREVIATION']))
+            home_away, opp = _parse_matchup(str(row['MATCHUP']))
             rows.append({
                 'team_id':           int(row['TEAM_ID']),
                 'team_abbreviation': str(row['TEAM_ABBREVIATION']),

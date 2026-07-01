@@ -8,12 +8,12 @@ from data.postgres.team_schedules import TeamScheduleManager, _parse_matchup
 # --- _parse_matchup ---
 
 def test_parse_matchup_home_game():
-    home_away, opp = _parse_matchup('BOS vs. MIA', 'BOS')
+    home_away, opp = _parse_matchup('BOS vs. MIA')
     assert home_away == 'home'
     assert opp == 'MIA'
 
 def test_parse_matchup_away_game():
-    home_away, opp = _parse_matchup('BOS @ MIA', 'BOS')
+    home_away, opp = _parse_matchup('BOS @ MIA')
     assert home_away == 'away'
     assert opp == 'MIA'
 
