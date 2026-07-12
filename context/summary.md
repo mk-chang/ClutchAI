@@ -4,7 +4,7 @@ _High-level state of the project. Update when significant milestones are reached
 
 ## Current State
 
-Multi-agent fantasy basketball assistant fully deployed on Railway with a staging environment. Transcript/article cleaning is now active in the pipeline — `gpt-4o-mini` filters ads, intros, and boilerplate from ingested content before vectorstore storage. Streamlit frontend live at `https://clutchai-production.up.railway.app`.
+Multi-agent fantasy basketball assistant fully deployed on Railway. Supervisor routes queries to Yahoo Fantasy, Statistics, and News research agents, then synthesizes via Analysis agent. Streamlit frontend live at `https://clutchai-production.up.railway.app`.
 
 ## What's Working
 
@@ -12,20 +12,16 @@ Multi-agent fantasy basketball assistant fully deployed on Railway with a stagin
 - Yahoo Fantasy API integration (45 tools)
 - NBA API integration (16 tools)
 - pgvector knowledge base on Railway PostgreSQL (YouTube transcripts + articles)
-- RAG retrieval active (DISABLE_RAG=false in production)
+- RAG retrieval active (DISABLE_RAG=false)
 - Streamlit UI
-- Railway deployment: `main` → production, `staging` → staging (branch source pending manual dashboard config)
+- Railway deployment (main branch, auto-deploy on push)
 - Hourly cron job (`lockedon-cron`) populating LockedOn Fantasy Basketball podcast transcripts
-- LLM-based transcript/article cleaning (`_clean_documents`) on all ingested content
-- DEV_MODE for verbose pipeline logging + reduced batch size (3 videos) in staging
 
 ## What's In Progress / Incomplete
 
-- **LockedOn backlog**: 655 YouTube videos ingesting via hourly cron (~15/run)
-- **Staging branch source**: Needs manual Railway dashboard config (ClutchAI + lockedon-cron → `staging` branch)
+- **LockedOn backlog**: 655 YouTube videos ingesting via hourly cron (~15/run, ~44 hrs to complete from 2026-05-25) — not reconfirmed complete
 - **GCP teardown**: Cloud Run deleted; Cloud SQL + Secret Manager still need manual Console cleanup
-- **Waiver wire tool**: Implemented with Postgres-persisted cache on `feature/waiver_wire` branch (not yet merged to main)
-- **Player stats database**: Design in progress. Schema (4 tables) and pipeline (nightly cron) approved. Agent tools section pending. See `context/sessions/2026-06-29-player-stats-db-brainstorm.md`.
+- **Multi-agent workflow fixes (design paused)**: LangSmith review of live conversations found 3 orchestration gaps — Yahoo Fantasy Agent re-discovers league_key from scratch on every call, Analysis Agent is inconsistently invoked for similar queries, and the new PlayerStatsDbTool isn't wired into free-agent recommendations. See `context/sessions/2026-07-01-langsmith-review-and-workflow-brainstorm.md`.
 
 ## Architecture Notes
 
@@ -37,4 +33,3 @@ See `CLAUDE.md` for full architecture overview and `context/agents/patterns.md` 
 | Pipeline scripts | `scripts/pipelines/` |
 | Vector managers | `data/postgres/vector_managers/` |
 | Cron master script | `scripts/pipelines/update_vector_database.py` |
-| Cleaning base | `data/postgres/vector_managers/base.py` → `_run_cleaning()` |

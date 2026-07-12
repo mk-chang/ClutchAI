@@ -90,6 +90,7 @@ class OpponentDefenseManager:
         df = leaguedashteamstats.LeagueDashTeamStats(
             season=season,
             measure_type_detailed_defense='Opponent',
+            per_mode_simple='PerGame',
             timeout=30,
         ).get_data_frames()[0]
         df = _compute_ranks(df)

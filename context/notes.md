@@ -4,13 +4,18 @@ _Running log of non-obvious decisions, debugging findings, and things to remembe
 
 ---
 
-## 2026-05-26
+## 2026-07-01
 
-- `RAILWAY_TOKEN` in `~/.claude/settings.json` `env` block eliminates Railway MCP session expiry — no more `railway login` + reload needed
-- Railway services are project-level; can't remove a service from one environment only — use `cron_schedule: 0 0 1 1 *` to effectively disable a cron in staging
-- Railway staging branch must be set manually in dashboard (Settings → Source) — MCP `update_service` has no branch parameter
-- `_clean_documents` tests patch `data.postgres.vector_managers.base.OpenAI` — requires module-level import in `base.py`, not a local import inside the method
-- Template method pattern for cleaning: `_run_cleaning` in base handles LLM mechanics; each manager owns its `_clean_documents` prompt
+- LangSmith project was renamed `pr-roasted-deliberation-80` → `clutch-ai` (hyphen). Search `list_projects` with `project_name="clutch"`, not `"clutch_ai"` — underscore won't match.
+- `agents/tools/waiver_wire.py` (WaiverWireTool / `get_waiver_wire_players`) exists on `staging` and `feature/waiver_wire` but is **absent from `feature/player_db` and `main`** — deployed/staging behavior can diverge from what's in this branch's `agents/tools/yahoo_api.py`.
+- `BaseAgent` (base_agent.py) already supports `user_context` end-to-end (constructor param + `_enhance_system_prompt`) for every agent — but `multi_agent_system.py` only wires it into `SupervisorAgent`/`FantasyAnalystAgent`, not `YahooFantasyAgent`/`StatisticAgent`. Giving those two agents the already-known league_key/roster context needs zero new plumbing, just one line at construction.
+
+---
+
+## 2026-06-30
+
+- **Deployment flow:** merge feature branch → staging first, manually verify, then merge to main for production. Never merge a feature branch directly to main.
+- `RAILWAY_TOKEN` does NOT work for Railway MCP auth — never suggest it or add it to settings.json. When MCP returns Unauthorized, tell user to run `railway login` in terminal.
 
 ---
 

@@ -20,24 +20,23 @@ _STAT_COLS = [
 _P36_STAT_COLS = [c for c in _STAT_COLS if c != 'PLUS_MINUS']
 _INFO_COLS = ['PLAYER_ID', 'PLAYER_NAME', 'TEAM_ABBREVIATION', 'AGE', 'GP']
 
-# BBM-style names; quoted in SQL to preserve case (avoids collision with pv/to stat cols)
-_Z_COLS = ['pV', 'rV', 'aV', 'sV', 'bV', 'pts3V', 'toV', 'fgV', 'ftV']
-_PG_VALUE_COLS  = ['value', 'three_v', 'pv']
-_TOT_VALUE_COLS = ['value', 'three_v']
-_P36_VALUE_COLS = ['value', 'three_v', 'pv']
+_Z_COLS = ['z_pts', 'z_reb', 'z_ast', 'z_stl', 'z_blk', 'z_3ptm',
+           'z_tov', 'z_fg', 'z_ft']
+_PG_VALUE_COLS  = ['rv', 'three_v', 'pv']
+_TOT_VALUE_COLS = ['rv', 'three_v']
+_P36_VALUE_COLS = ['rv', 'three_v', 'pv']
 
-# NBA API col (lowercase) → SQL col name overrides
-_STAT_SQL_RENAMES = {'tov': 'to'}
-
-
-def _stat_sql_col(nba_col: str) -> str:
-    return _STAT_SQL_RENAMES.get(nba_col.lower(), nba_col.lower())
+_STD_DEV_COLS = [
+    'std_dev_pts', 'std_dev_reb', 'std_dev_ast', 'std_dev_stl', 'std_dev_blk',
+    'std_dev_to', 'std_dev_fgp', 'std_dev_3pp', 'std_dev_ftp',
+]
 
 
 def _make_create_sql(table: str, stat_cols: list, value_cols: list) -> text:
-    stat_ddl  = ',\n        '.join(f'{_stat_sql_col(c)} FLOAT' for c in stat_cols)
-    z_ddl     = ',\n        '.join(f'"{c}" FLOAT' for c in _Z_COLS)
-    value_ddl = ',\n        '.join(f'{c} FLOAT' for c in value_cols)
+    stat_ddl     = ',\n        '.join(f'{c.lower()} FLOAT' for c in stat_cols)
+    z_ddl        = ',\n        '.join(f'{c} FLOAT' for c in _Z_COLS)
+    value_ddl    = ',\n        '.join(f'{c} FLOAT' for c in value_cols)
+    std_dev_ddl  = ',\n        '.join(f'{c} FLOAT' for c in _STD_DEV_COLS)
     return text(f"""
         CREATE TABLE IF NOT EXISTS {table} (
             player_id         INTEGER      NOT NULL,
@@ -49,6 +48,7 @@ def _make_create_sql(table: str, stat_cols: list, value_cols: list) -> text:
             {stat_ddl},
             {z_ddl},
             {value_ddl},
+            {std_dev_ddl},
             updated_at        TIMESTAMP DEFAULT NOW(),
             PRIMARY KEY (player_id, season)
         )
@@ -56,33 +56,28 @@ def _make_create_sql(table: str, stat_cols: list, value_cols: list) -> text:
 
 
 def _make_upsert_sql(table: str, stat_cols: list, value_cols: list) -> text:
-    sql_stat  = [_stat_sql_col(c) for c in stat_cols]
+    all_stat  = [c.lower() for c in stat_cols]
     all_value = list(value_cols)
+    all_z     = list(_Z_COLS)
 
-    info_cols     = ['player_id', 'season', 'player_name', 'team_abbreviation', 'age', 'gp']
-    z_col_sql     = [f'"{c}"' for c in _Z_COLS]
-
-    insert_cols   = info_cols + sql_stat + z_col_sql + all_value
-    insert_params = ([f':{c}' for c in info_cols + sql_stat] +
-                     [f':{c}' for c in _Z_COLS] +
-                     [f':{c}' for c in all_value])
-
-    update_parts  = (
-        [f'{c} = EXCLUDED.{c}' for c in ['player_name', 'team_abbreviation', 'age', 'gp'] + sql_stat] +
-        [f'"{c}" = EXCLUDED."{c}"' for c in _Z_COLS] +
-        [f'{c} = EXCLUDED.{c}' for c in all_value]
-    )
+    insert_cols   = ['player_id', 'season', 'player_name', 'team_abbreviation', 'age', 'gp'] + all_stat
+    insert_params = [f':{c}' for c in insert_cols]
+    update_cols   = ['player_name', 'team_abbreviation', 'age', 'gp'] + all_stat + all_z + all_value
 
     return text(f"""
         INSERT INTO {table} (
             {', '.join(insert_cols)},
+            {', '.join(all_z)},
+            {', '.join(all_value)},
             updated_at
         ) VALUES (
             {', '.join(insert_params)},
+            {', '.join(f':{c}' for c in all_z)},
+            {', '.join(f':{c}' for c in all_value)},
             NOW()
         )
         ON CONFLICT (player_id, season) DO UPDATE SET
-            {', '.join(update_parts)},
+            {', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)},
             updated_at = NOW()
     """)
 
@@ -98,6 +93,20 @@ _CREATE_P36   = _make_create_sql(_P36_TABLE, _P36_STAT_COLS, _P36_VALUE_COLS)
 _UPSERT_PG    = _make_upsert_sql(_PG_TABLE,  _STAT_COLS,     _PG_VALUE_COLS)
 _UPSERT_TOT   = _make_upsert_sql(_TOT_TABLE, _STAT_COLS,     _TOT_VALUE_COLS)
 _UPSERT_P36   = _make_upsert_sql(_P36_TABLE, _P36_STAT_COLS, _P36_VALUE_COLS)
+
+
+def migrate_std_dev_cols(connection: PostgresConnection) -> bool:
+    """Add std dev columns to existing aggregate tables. Safe to run multiple times."""
+    adds = ', '.join(f'ADD COLUMN IF NOT EXISTS {c} FLOAT' for c in _STD_DEV_COLS)
+    try:
+        with connection.get_engine().connect() as conn:
+            for table in [_PG_TABLE, _TOT_TABLE, _P36_TABLE]:
+                conn.execute(text(f'ALTER TABLE {table} {adds}'))
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to migrate std dev columns: {e}")
+        return False
 
 
 # --- Season utilities ---
@@ -171,7 +180,7 @@ class PlayerStatsManager:
                     'gp':                row.get('GP'),
                 }
                 for c in stat_cols:
-                    params[_stat_sql_col(c)] = row.get(c)
+                    params[c.lower()] = row.get(c)
                 for c in _Z_COLS + value_cols:
                     params[c] = None  # filled in by PlayerValueCalculator
                 conn.execute(sql, params)
@@ -194,3 +203,29 @@ class PlayerStatsManager:
             'tot': self.upsert_total(tot, season),
             'p36': self.upsert_p36(p36, season),
         }
+
+    def update_std_devs(self, std_devs: dict, season: str) -> int:
+        """Write std dev values back to all 3 aggregate tables.
+
+        Args:
+            std_devs: {player_id: {std_dev_pts, std_dev_reb, std_dev_ast, std_dev_stl,
+                                   std_dev_blk, std_dev_to, std_dev_fgp, std_dev_3pp,
+                                   std_dev_ftp: float}}
+        Returns: Number of players updated.
+        """
+        if not std_devs:
+            return 0
+        set_clause = ', '.join(f'{c} = :{c}' for c in _STD_DEV_COLS)
+        sqls = {
+            t: text(f'UPDATE {t} SET {set_clause}, updated_at = NOW() WHERE player_id = :player_id AND season = :season')
+            for t in [_PG_TABLE, _TOT_TABLE, _P36_TABLE]
+        }
+        updated = 0
+        with self.connection.get_engine().connect() as conn:
+            for player_id, devs in std_devs.items():
+                params = {'player_id': player_id, 'season': season, **devs}
+                for sql in sqls.values():
+                    conn.execute(sql, params)
+                updated += 1
+            conn.commit()
+        return updated
